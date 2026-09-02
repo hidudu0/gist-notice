@@ -1,0 +1,18 @@
+# 의존성 — npm install 로 언제든 복원됨. 절대 커밋하지 않는다.
+node_modules/
+
+# Cloudflare wrangler 로컬 상태 + 로컬 시크릿
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# 환경 변수 (VAPID 개인키 등이 실수로 여기 들어갈 수 있다)
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# 로그
+*.log
+npm-debug.log*
