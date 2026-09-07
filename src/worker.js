@@ -113,7 +113,9 @@ async function notifyAll(fresh, env) {
         }
       : {
           title: `새 학사공지 ${fresh.length}건`,
-          body: fresh.map((c) => c.title).join(' · ').slice(0, 150),
+          // 하루 두 번만 확인하므로 한 번에 여러 건이 쌓인다.
+          // 줄바꿈으로 나열해야 알림을 펼쳤을 때 제목이 읽힌다.
+          body: fresh.map((c) => c.title).join('\n').slice(0, 300),
           url: BOARD,
         };
 

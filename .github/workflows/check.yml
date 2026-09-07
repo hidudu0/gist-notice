@@ -1,10 +1,13 @@
-# GIST 학사공지 확인 — 30분마다
+# GIST 학사공지 확인 — 매일 아침 9시, 저녁 6시 (KST)
 #
 # 왜 이게 필요한가:
 #   Cloudflare Workers 의 Cron Trigger 를 wrangler.jsonc 에 설정해뒀지만,
 #   무료 플랜(특히 신규 계정)에서 등록만 되고 실제로는 발화하지 않는 사례가
 #   많이 보고돼 있다. 조용히 안 돌고 로그도 안 남는다.
 #   그래서 GitHub Actions 가 대신 깨워준다.
+#
+#   참고: GitHub 무료 러너는 예약 시각에서 몇 분~십몇 분 늦게 도는 일이 흔하다.
+#        정시 알림이 아니라 "아침에 한 번, 저녁에 한 번" 정도로 생각하면 된다.
 #
 #   Cloudflare 크론이 나중에 살아나도 문제없다. 두 번 돌아도 두 번째는
 #   새 글이 없다고 판단하고 아무것도 안 보낸다(lastNo 비교).
@@ -16,7 +19,10 @@ name: check-notices
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # UTC 기준. 30분마다
+    # UTC 기준이다. 한국시간(KST)은 UTC+9.
+    #   00:00 UTC = 09:00 KST (아침)
+    #   09:00 UTC = 18:00 KST (저녁)
+    - cron: '0 0,9 * * *'
   workflow_dispatch:          # Actions 탭에서 손으로도 돌릴 수 있게
 
 jobs:
