@@ -35,3 +35,4 @@ export function diff(items, lastNo) {
 
   return { fresh, maxNo };
 }
+

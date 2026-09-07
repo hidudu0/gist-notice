@@ -38,3 +38,4 @@ test('파싱 실패로 빈 배열이 와도 lastNo 를 날리지 않는다', () 
   assert.deepEqual(r.fresh, []);
   assert.equal(r.maxNo, 223143);
 });
+
