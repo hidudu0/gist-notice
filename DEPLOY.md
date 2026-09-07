@@ -78,12 +78,37 @@ cron 값은 **UTC 기준**이다. 한국시간(KST)은 UTC+9 이므로 9를 빼�
 GitHub 무료 러너는 예약 시각보다 몇 분~십몇 분 늦게 도는 일이 흔하다.
 "정시 알림"이 아니라 "아침에 한 번, 저녁에 한 번" 정도로 생각하면 된다.
 
-## 문제가 생기면
+## 관리 명령
+
+전부 `~/Desktop/학사공지/gist-notice` 안에서 실행한다.
 
 ```bash
-npx wrangler tail                                    # Worker 실시간 로그
-gh run list --workflow=check-notices --limit 5       # 자동 확인 이력
+npm run check     # 크론을 기다리지 않고 지금 즉시 확인 (새 글 있으면 알림 발송)
+npm run subs      # 현재 구독자 수
+npm run state     # 마지막으로 알린 글 번호
+npm run logs      # Worker 실시간 로그 (Ctrl+C 로 종료)
+npm run deploy    # 코드 고친 뒤 반영
+npm test          # 파서·발송 테스트
 ```
+
+```bash
+gh run list --workflow=check-notices --limit 5   # 자동 확인 이력
+gh run view --log                                # 마지막 실행 로그
+```
+
+## 알림을 강제로 한 번 받아보기
+
+```bash
+npx wrangler kv key put --binding GIST --remote lastNo "223200"
+# KV 전파에 최대 1분 걸린다
+sleep 70
+npm run check
+```
+
+`{"fresh":3,"sent":2}` 처럼 나오면 구독자 2명에게 발송된 것.
+확인 뒤에는 그냥 두면 된다 — 다음 실행에서 알아서 최신 번호로 맞춰진다.
+
+## 문제가 생기면
 
 | 증상 | 확인할 것 |
 |---|---|
