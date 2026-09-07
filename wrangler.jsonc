@@ -11,8 +11,8 @@
   // id 는 로그인 후  npx wrangler kv namespace create GIST  로 받아서 채운다.
   "kv_namespaces": [{ "binding": "GIST", "id": "ac1c148a072c40ecac09c39307f4833a" }],
 
-  // 매일 아침 9시 / 저녁 6시 (KST). cron 은 UTC 기준이라 00:00 과 09:00.
-  "triggers": { "crons": ["0 0,9 * * *"] },
+  // 30분마다 게시판을 확인한다.
+  "triggers": { "crons": ["*/30 * * * *"] },
 
   "observability": { "enabled": true },
 

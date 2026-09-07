@@ -1,4 +1,4 @@
-# GIST 학사공지 확인 — 매일 아침 9시, 저녁 6시 (KST)
+# GIST 학사공지 확인 — 30분마다
 #
 # 왜 이게 필요한가:
 #   Cloudflare Workers 의 Cron Trigger 를 wrangler.jsonc 에 설정해뒀지만,
@@ -19,10 +19,7 @@ name: check-notices
 
 on:
   schedule:
-    # UTC 기준이다. 한국시간(KST)은 UTC+9.
-    #   00:00 UTC = 09:00 KST (아침)
-    #   09:00 UTC = 18:00 KST (저녁)
-    - cron: '0 0,9 * * *'
+    - cron: '*/30 * * * *'   # 30분마다
   workflow_dispatch:          # Actions 탭에서 손으로도 돌릴 수 있게
 
 jobs:
