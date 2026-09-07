@@ -167,6 +167,27 @@
     border:1px solid var(--line); font-size:11.5px; line-height:1.5;
   }
 
+  /* -----------------------------------------------------------
+     당겨서 새로고침
+     화면 맨 위에서 아래로 끌면 목록을 다시 받아온다.
+     ----------------------------------------------------------- */
+  /* 브라우저가 제 새로고침을 같이 걸어버리면 두 번 당겨진다. 막는다. */
+  body { overscroll-behavior-y:contain; }
+  #ptr {
+    position:fixed; left:0; right:0; top:env(safe-area-inset-top); height:56px;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none; opacity:0; transform:translateY(-56px);
+    transition:transform .25s ease, opacity .25s ease;
+  }
+  /* 끄는 중에는 손가락을 바로 따라가야 한다. 전환을 끈다. */
+  #ptr.drag { transition:none; }
+  #ptr .ring {
+    width:24px; height:24px; border-radius:50%;
+    border:2px solid var(--line); border-top-color:var(--brand);
+  }
+  #ptr.spin .ring { animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition:none !important; }
     button:active, .chips span:active, a.item:active { transform:none; }
@@ -174,6 +195,9 @@
 </style>
 </head>
 <body>
+
+<div id="ptr" aria-hidden="true"><div class="ring"></div></div>
+
 <div class="wrap">
 
   <header>
@@ -307,6 +331,13 @@ async function start() {
   const reg = await navigator.serviceWorker.register('/sw.js');
   const existing = await reg.pushManager.getSubscription();
   showButton(Boolean(existing));
+
+  // 살아 있다는 신호. 서버가 이 구독의 만료 시한을 다시 180일로 민다.
+  // 앱을 지운 기기는 이 요청을 못 보내므로 KV 가 알아서 정리한다.
+  // 화면을 막을 이유가 없어서 기다리지 않고, 실패해도 조용히 넘긴다.
+  if (existing) {
+    postJson('/api/subscribe', existing.toJSON(), adminHeaders()).catch(() => {});
+  }
 }
 
 function showButton(subscribed) {
@@ -502,6 +533,68 @@ async function loadList() {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// -----------------------------------------------------------
+//  당겨서 새로고침
+//
+//  맨 위에서 아래로 끌면 목록과 구독자 수를 다시 받아온다.
+//  서버는 KV 에 있는 값을 돌려줄 뿐 게시판을 새로 긁지는 않는다 —
+//  그건 30분마다 도는 크론 몫이고, 아무나 시키게 두면 GIST 서버를
+//  우리 이름으로 계속 두드리게 된다.
+// -----------------------------------------------------------
+const ptr = document.getElementById('ptr');
+const TRIGGER = 64;   // 이만큼 끌어야 새로고침이 걸린다
+const MAX = 90;       // 더 끌어도 여기까지만 내려온다
+
+let startY = null;    // 끌기 시작한 지점. null 이면 끄는 중이 아니다
+let pulled = 0;       // 지금까지 끌린 거리(px)
+let busy = false;     // 새로고침 중에는 다시 안 걸리게
+
+function ptrAt(y) {
+  ptr.style.transform = `translateY(${y - 56}px)`;
+  ptr.style.opacity = String(Math.min(1, y / TRIGGER));
+}
+
+addEventListener('touchstart', (e) => {
+  // 맨 위가 아니면 그냥 스크롤이다. 손가락 두 개는 확대/축소라 건드리지 않는다.
+  if (busy || window.scrollY > 0 || e.touches.length !== 1) return;
+  startY = e.touches[0].clientY;
+  pulled = 0;
+  ptr.classList.add('drag');
+}, { passive: true });
+
+addEventListener('touchmove', (e) => {
+  if (startY === null) return;
+  const dy = e.touches[0].clientY - startY;
+
+  // 위로 올리는 중이면 평범한 스크롤이다. 넘긴다.
+  if (dy <= 0) { endPull(false); return; }
+
+  // 손가락을 그대로 따라가면 스치기만 해도 걸린다. 저항을 준다.
+  pulled = Math.min(MAX, dy / 2.2);
+  ptrAt(pulled);
+  e.preventDefault(); // 고무줄 스크롤과 겹치지 않게
+}, { passive: false });
+
+addEventListener('touchend', () => { if (startY !== null) endPull(pulled >= TRIGGER); });
+addEventListener('touchcancel', () => { if (startY !== null) endPull(false); });
+
+async function endPull(go) {
+  startY = null;
+  ptr.classList.remove('drag');
+  if (!go) { ptrAt(0); return; }
+
+  busy = true;
+  ptr.classList.add('spin');
+  ptrAt(56);
+  try {
+    await Promise.all([loadMeta(), loadList()]);
+  } finally {
+    ptr.classList.remove('spin');
+    ptrAt(0);
+    busy = false;
+  }
 }
 
 start();
