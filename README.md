@@ -80,12 +80,13 @@ npx wrangler deploy       # 배포
 - [x] 0.5. JS 워밍업 (`scratch.js`)
 - [x] 1. `src/parse.js` — HTML 파싱
 - [x] 2. `src/diff.js` — 새 글 골라내기
-- [~] 3. Cloudflare 배포 뼈대 — 코드 완료, 로그인/KV 생성/배포만 남음
+- [x] 3. Cloudflare 배포 뼈대
 - [x] 4. `worker.js` fetch 핸들러 — 구독 API
 - [x] 5. `public/index.html` — 구독 화면
 - [x] 6. `public/sw.js` — service worker
 - [x] 7. `worker.js` scheduled 핸들러 — 크론
-- [ ] 8. 실기기 확인 + 친구 배포
+- [x] 8. 배포 완료 — https://gist-notice.kdylee0713.workers.dev
+- [ ] 9. 폰에서 알림 켜고 실제 수신 확인
 
 ## 주의
 

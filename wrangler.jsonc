@@ -12,7 +12,7 @@
   "kv_namespaces": [{ "binding": "GIST", "id": "ac1c148a072c40ecac09c39307f4833a" }],
 
   // 30분마다 게시판을 확인한다.
-  "triggers": { "crons": ["* * * * *"] },
+  "triggers": { "crons": ["*/30 * * * *"] },
 
   "observability": { "enabled": true },
 
