@@ -145,6 +145,17 @@ async function checkBoard(env) {
 // 더 필요하면 KV 값 하나가 아니라 연도별로 키를 쪼개야 한다.
 const ARCHIVE_MAX = 300;
 
+// 구독은 180일 뒤 KV 가 알아서 지운다.
+//
+// 왜 필요한가: PWA 를 지우거나 알림을 껐다 켜면 푸시 서비스가 새 endpoint 를
+// 발급한다 → sub: 키가 하나 더 생기고 옛 키는 남는다. 옛 키 정리는 실제로
+// 푸시를 쏠 때 410/404 를 받아야만 되는데, 새 공지가 없으면 그 코드가 아예
+// 안 돈다. 그래서 구독자 수가 실제보다 부풀어 오른다.
+//
+// 앱을 열 때마다 /api/subscribe 가 다시 불려 TTL 이 180일로 밀린다.
+// 살아 있는 기기는 계속 갱신되고, 사라진 기기는 조용히 만료된다.
+const SUB_TTL = 180 * 24 * 60 * 60;
+
 async function mergeArchive(items, env) {
   const old = (await env.GIST.get('latest', 'json')) ?? [];
 
@@ -270,16 +281,22 @@ export default {
       if (!sub) return json({ error: '올바른 구독 정보가 아닙니다' }, 400);
 
       const key = await subKey(sub.endpoint);
+
+      // 앱을 열 때마다 여기로 다시 온다(TTL 갱신). 이미 있는 키면 인원수가
+      // 변할 리 없으니 list() 를 돌리지 않는다 — get 한 번이 훨씬 싸다.
+      const isNew = (await env.GIST.get(key)) === null;
+
       await env.GIST.put(
         key,
         JSON.stringify({ endpoint: sub.endpoint, expirationTime: null, keys: sub.keys }),
+        { expirationTtl: SUB_TTL },
       );
 
       // 관리자 토큰을 달고 구독하면 이 기기가 장애 알림을 받는다.
       // 페이지에서 #admin=<토큰> 으로 한 번만 등록한다.
       if (authed(req, env)) await env.GIST.put('adminSub', key);
 
-      await refreshCount(env);
+      if (isNew) await refreshCount(env);
       return json({ ok: true });
     }
 
