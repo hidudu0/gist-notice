@@ -1,6 +1,6 @@
 # 배포 현황 & 운영
 
-**주소: https://gist-notice.kdylee0713.workers.dev**
+**주소: https://gist-notice.dudu0.workers.dev**
 
 배포는 끝났다. 남은 건 폰에서 알림을 켜는 것뿐.
 
@@ -18,7 +18,7 @@
 ## 폰에서 알림 켜기
 
 ### 안드로이드
-1. 크롬으로 https://gist-notice.kdylee0713.workers.dev 접속
+1. 크롬으로 https://gist-notice.dudu0.workers.dev 접속
 2. **알림 켜기** → 허용
 
 ### 아이폰 (iOS 16.4 이상)
@@ -38,7 +38,7 @@
 cd ~/Desktop/학사공지/gist-notice
 npx wrangler kv key put --binding GIST --remote lastNo "223200"
 curl -X POST -H "x-admin-token: $(grep ADMIN_TOKEN .dev.vars | cut -d= -f2)" \
-  https://gist-notice.kdylee0713.workers.dev/api/run
+  https://gist-notice.dudu0.workers.dev/api/run
 ```
 
 응답에 `{"fresh":3,"sent":1}` 처럼 나오고 폰에 알림이 뜨면 성공.
