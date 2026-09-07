@@ -70,7 +70,7 @@ test/            node --test 용 테스트 + 게시판 HTML 픽스처
 npm install
 npm test                  # 파서 · diff 테스트
 npx wrangler dev          # 로컬 실행
-curl localhost:8787/__scheduled   # 크론 강제 발화
+curl localhost:8787/cdn-cgi/local/scheduled   # 크론 강제 발화
 npx wrangler deploy       # 배포
 ```
 
@@ -78,14 +78,14 @@ npx wrangler deploy       # 배포
 
 - [x] 0. 환경 확인
 - [x] 0.5. JS 워밍업 (`scratch.js`)
-- [ ] 1. `src/parse.js` — HTML 파싱
-- [ ] 2. `src/diff.js` — 새 글 골라내기
-- [ ] 3. Cloudflare 배포 뼈대
-- [ ] 4. `worker.js` fetch 핸들러 — 구독 API
-- [ ] 5. `public/index.html` — 구독 화면
-- [ ] 6. `public/sw.js` — service worker
-- [ ] 7. `worker.js` scheduled 핸들러 — 크론
-- [ ] 8. 다듬기 + 배포
+- [x] 1. `src/parse.js` — HTML 파싱
+- [x] 2. `src/diff.js` — 새 글 골라내기
+- [~] 3. Cloudflare 배포 뼈대 — 코드 완료, 로그인/KV 생성/배포만 남음
+- [x] 4. `worker.js` fetch 핸들러 — 구독 API
+- [x] 5. `public/index.html` — 구독 화면
+- [x] 6. `public/sw.js` — service worker
+- [x] 7. `worker.js` scheduled 핸들러 — 크론
+- [ ] 8. 실기기 확인 + 친구 배포
 
 ## 주의
 

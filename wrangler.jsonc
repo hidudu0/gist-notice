@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gist-notice",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+
+  // public/ 를 정적 파일로 서빙한다. worker 코드에서는 env.ASSETS 로 접근.
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  // 구독·마지막 글번호·목록 캐시를 담는 키-값 저장소.
+  // id 는 로그인 후  npx wrangler kv namespace create GIST  로 받아서 채운다.
+  "kv_namespaces": [{ "binding": "GIST", "id": "PLACEHOLDER" }],
+
+  // 30분마다 게시판을 확인한다.
+  "triggers": { "crons": ["*/30 * * * *"] },
+
+  "observability": { "enabled": true },
+
+  "vars": {
+    // 공개키는 노출돼도 무방하다. 브라우저가 구독할 때 이 값을 쓴다.
+    "VAPID_PUBLIC_KEY": "BP_Uk8ZnUXeQxC7E8Bii-qCC9UNc9YIh2xSVBW4t87O4DbOwV5epuuH8CJFtFpShrSvh_gE0bqL_0HFYaBY3w0Y",
+    // 푸시 서비스가 문제 생겼을 때 연락할 주소 (RFC 8292)
+    "VAPID_SUBJECT": "mailto:kdylee0713@gmail.com",
+    "BOARD_URL": "https://www.gist.ac.kr/kr/html/sub05/050209.html"
+  }
+}

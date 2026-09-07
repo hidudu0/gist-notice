@@ -40,3 +40,21 @@ test('빈 제목이 없다', () => {
   const 빈것 = items.filter((c) => !c.title);
   assert.equal(빈것.length, 0, `제목이 빈 항목 ${빈것.length}건`);
 });
+
+test('제목에 낀 NEW 아이콘 태그를 걷어낸다', () => {
+  // 실제로 터졌던 버그. 게시판은 최근 글 제목 앞에 아이콘을 넣는다:
+  //   <a href='…'><img src='/bbs/img/common/list_icon_new.gif' …> [학사] 제목</a>
+  // 태그를 안 벗기면 알림 제목이 "<img src=…" 로 나간다.
+  const 가짜 = `<tr id='BBSList999999' class='lstNtc'>
+    <td class=category>학사</td>
+    <td class=title> <a href='?mode=V&amp;no=999999'><img src='/bbs/img/common/list_icon_new.gif' alt='신규'> [학사] 새 글 제목</a> </td>
+    <td class=reg_date>2026-09-07</td>`;
+  const [it] = parse(가짜);
+  assert.equal(it.title, '[학사] 새 글 제목');
+  assert.ok(!it.title.includes('<'), '제목에 태그가 남았다');
+});
+
+test('픽스처의 모든 제목에 HTML 태그가 없다', () => {
+  const 태그있음 = items.filter((c) => /[<>]/.test(c.title));
+  assert.equal(태그있음.length, 0);
+});
