@@ -37,7 +37,7 @@
 ```bash
 cd ~/Desktop/학사공지/gist-notice
 npx wrangler kv key put --binding GIST --remote lastNo "223200"
-curl -X POST -H "x-admin-token: $(grep ADMIN_TOKEN .dev.vars | cut -d= -f2)" \
+curl -X POST -H "x-admin-token: $(grep '^ADMIN_TOKEN=' .dev.vars | cut -d= -f2-)" \
   https://gist-notice.dudu0.workers.dev/api/run
 ```
 

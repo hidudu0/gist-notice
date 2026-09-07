@@ -146,6 +146,11 @@ async function notifyAll(fresh, env) {
   );
 
   // 한 명이 실패해도 나머지는 간다. 그래서 all 이 아니라 allSettled 를 쓴다.
+  // 던져진 예외는 여기서 로그로 남긴다. 안 남기면 "발송 0건" 만 보이고
+  // 왜 실패했는지 알 길이 없다.
+  for (const r of results) {
+    if (r.status === 'rejected') console.error('푸시 예외:', String(r.reason?.stack || r.reason));
+  }
   return results.filter((r) => r.status === 'fulfilled' && r.value === 'ok').length;
 }
 

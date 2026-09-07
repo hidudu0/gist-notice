@@ -86,7 +86,7 @@ npx wrangler deploy       # 배포
 - [x] 6. `public/sw.js` — service worker
 - [x] 7. `worker.js` scheduled 핸들러 — 크론
 - [x] 8. 배포 완료 — https://gist-notice.dudu0.workers.dev
-- [ ] 9. 폰에서 알림 켜고 실제 수신 확인
+- [x] 9. 폰에서 알림 켜고 실제 수신 확인
 
 ## 주의
 
