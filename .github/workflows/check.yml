@@ -1,0 +1,36 @@
+# GIST 학사공지 확인 — 30분마다
+#
+# 왜 이게 필요한가:
+#   Cloudflare Workers 의 Cron Trigger 를 wrangler.jsonc 에 설정해뒀지만,
+#   무료 플랜(특히 신규 계정)에서 등록만 되고 실제로는 발화하지 않는 사례가
+#   많이 보고돼 있다. 조용히 안 돌고 로그도 안 남는다.
+#   그래서 GitHub Actions 가 대신 깨워준다.
+#
+#   Cloudflare 크론이 나중에 살아나도 문제없다. 두 번 돌아도 두 번째는
+#   새 글이 없다고 판단하고 아무것도 안 보낸다(lastNo 비교).
+#
+# 주의: GitHub 무료 계정은 리포에 60일간 활동이 없으면 예약 워크플로를 끈다.
+#      알림이 갑자기 멈추면 Actions 탭에서 다시 켜면 된다.
+
+name: check-notices
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # UTC 기준. 30분마다
+  workflow_dispatch:          # Actions 탭에서 손으로도 돌릴 수 있게
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 게시판 확인 요청
+        run: |
+          code=$(curl -sS -o /tmp/out.json -w '%{http_code}' \
+            -X POST \
+            -H "x-admin-token: ${{ secrets.ADMIN_TOKEN }}" \
+            "${{ secrets.WORKER_URL }}/api/run")
+          echo "HTTP $code"
+          cat /tmp/out.json
+          echo
+          # 200 이 아니면 이 스텝을 실패시켜 Actions 탭에 빨간불이 뜨게 한다
+          test "$code" = "200"

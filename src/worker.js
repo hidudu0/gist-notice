@@ -179,6 +179,16 @@ export default {
       return json({ ok: true });
     }
 
+    // 크론을 기다리지 않고 지금 당장 한 번 돌린다.
+    // 알림이 실제로 오는지 테스트할 때 쓴다. 토큰 없이는 못 부른다 —
+    // 열어두면 아무나 우리 이름으로 GIST 서버를 계속 긁게 된다.
+    if (pathname === '/api/run' && req.method === 'POST') {
+      if (!env.ADMIN_TOKEN || req.headers.get('x-admin-token') !== env.ADMIN_TOKEN) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      return json(await checkBoard(env));
+    }
+
     // 나머지는 public/ 의 정적 파일
     return env.ASSETS.fetch(req);
   },

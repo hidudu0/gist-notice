@@ -9,10 +9,10 @@
 
   // 구독·마지막 글번호·목록 캐시를 담는 키-값 저장소.
   // id 는 로그인 후  npx wrangler kv namespace create GIST  로 받아서 채운다.
-  "kv_namespaces": [{ "binding": "GIST", "id": "PLACEHOLDER" }],
+  "kv_namespaces": [{ "binding": "GIST", "id": "ac1c148a072c40ecac09c39307f4833a" }],
 
   // 30분마다 게시판을 확인한다.
-  "triggers": { "crons": ["*/30 * * * *"] },
+  "triggers": { "crons": ["* * * * *"] },
 
   "observability": { "enabled": true },
 
