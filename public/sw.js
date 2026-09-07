@@ -32,7 +32,9 @@ self.addEventListener('push', (event) => {
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       data: data.url,
-      tag: 'gist-notice',       // 같은 tag 는 덮어쓴다 (알림 도배 방지)
+      // 같은 tag 는 덮어쓴다(도배 방지). 직접 보내는 메시지는 서버가
+      // 매번 다른 tag 를 줘서 공지 알림을 밀어내지 않게 한다.
+      tag: data.tag || 'gist-notice',
       renotify: true,
     }),
   );

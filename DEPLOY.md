@@ -96,6 +96,18 @@ gh run list --workflow=check-notices --limit 5   # 자동 확인 이력
 gh run view --log                                # 마지막 실행 로그
 ```
 
+## 구독자 전원에게 직접 메시지 보내기
+
+```bash
+npm run send "제목" "내용"
+npm run send "스터디 공지" "이번 주 목요일 7시, 오리단길" "https://open.kakao.com/…"
+```
+
+링크를 생략하면 알림을 눌렀을 때 이 사이트가 열린다.
+`2명에게 보냈습니다.` 처럼 출력되면 성공.
+
+공지 알림과 같은 발송 경로를 쓴다 — 죽은 구독 정리도 똑같이 동작한다.
+
 ## 알림을 강제로 한 번 받아보기
 
 ```bash

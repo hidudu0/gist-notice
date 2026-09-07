@@ -73,6 +73,11 @@ async function readSubscription(req) {
   }
 }
 
+// 관리자용 엔드포인트 잠금. 열어두면 아무나 우리 이름으로 GIST 서버를 긁거나
+// 구독자 전원에게 아무 메시지나 쏠 수 있다.
+const authed = (req, env) =>
+  Boolean(env.ADMIN_TOKEN) && req.headers.get('x-admin-token') === env.ADMIN_TOKEN;
+
 // ===========================================================
 //  크론이 실제로 하는 일
 // ===========================================================
@@ -101,6 +106,7 @@ async function checkBoard(env) {
   return { fresh: fresh.length, sent };
 }
 
+// 새 공지를 알림 한 건으로 만들어 전원에게 보낸다.
 async function notifyAll(fresh, env) {
   // 새 글이 여러 건이면 알림도 여러 개 쏘는 대신 하나로 묶는다.
   // 잠금화면이 도배되지 않고, 아래 subrequest 한도에도 여유가 생긴다.
@@ -113,12 +119,17 @@ async function notifyAll(fresh, env) {
         }
       : {
           title: `새 학사공지 ${fresh.length}건`,
-          // 하루 두 번만 확인하므로 한 번에 여러 건이 쌓인다.
           // 줄바꿈으로 나열해야 알림을 펼쳤을 때 제목이 읽힌다.
           body: fresh.map((c) => c.title).join('\n').slice(0, 300),
           url: BOARD,
         };
 
+  return sendToAll(data, env);
+}
+
+// 구독자 전원에게 알림 하나를 보낸다. 공지 알림과 직접 보내는 메시지가
+// 같은 경로를 쓴다 — 발송·실패처리 로직을 두 벌 만들지 않기 위해서.
+async function sendToAll(data, env) {
   const list = await env.GIST.list({ prefix: 'sub:' });
 
   // ponytail: Workers 무료 플랜은 호출 1회당 바깥으로 나가는 fetch 가 50개까지다.
@@ -190,10 +201,32 @@ export default {
     // 알림이 실제로 오는지 테스트할 때 쓴다. 토큰 없이는 못 부른다 —
     // 열어두면 아무나 우리 이름으로 GIST 서버를 계속 긁게 된다.
     if (pathname === '/api/run' && req.method === 'POST') {
-      if (!env.ADMIN_TOKEN || req.headers.get('x-admin-token') !== env.ADMIN_TOKEN) {
-        return json({ error: 'unauthorized' }, 401);
-      }
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
       return json(await checkBoard(env));
+    }
+
+    // 공지와 무관하게 내가 직접 구독자 전원에게 메시지를 보낸다.
+    // 사용:  npm run send "제목" "내용" [링크]
+    if (pathname === '/api/broadcast' && req.method === 'POST') {
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
+      const msg = await req.json().catch(() => null);
+      if (!msg?.title || !msg?.body) {
+        return json({ error: 'title 과 body 가 필요합니다' }, 400);
+      }
+
+      // 푸시 본문은 4KB 를 넘으면 발송이 실패한다. 넉넉히 자른다.
+      const sent = await sendToAll(
+        {
+          title: String(msg.title).slice(0, 100),
+          body: String(msg.body).slice(0, 500),
+          url: msg.url ? String(msg.url).slice(0, 500) : '/',
+          // 공지 알림을 덮어쓰지 않도록 매번 다른 tag 를 준다
+          tag: `bc-${Date.now()}`,
+        },
+        env,
+      );
+      return json({ sent });
     }
 
     // 나머지는 public/ 의 정적 파일

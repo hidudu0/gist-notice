@@ -9,7 +9,8 @@
     "logs": "wrangler tail --format pretty",
     "check": "curl -s -X POST -H \"x-admin-token: $(grep '^ADMIN_TOKEN=' .dev.vars | cut -d= -f2-)\" https://gist-notice.dudu0.workers.dev/api/run; echo",
     "subs": "wrangler kv key list --binding GIST --remote | grep -o 'sub:' | wc -l",
-    "state": "wrangler kv key get --binding GIST --remote lastNo"
+    "state": "wrangler kv key get --binding GIST --remote lastNo",
+    "send": "node scripts/send.js"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0"
