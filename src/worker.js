@@ -12,6 +12,7 @@
 import { parse } from './parse.js';
 import { diff } from './diff.js';
 import { sendPush } from './push.js';
+import { toIcs } from './meals.js';
 
 // 게시판 주소는 wrangler.jsonc 의 vars.BOARD_URL 한 곳에만 있다.
 const detailUrl = (board, no) => `${board}?mode=V&no=${no}`;
@@ -273,6 +274,26 @@ export default {
       return json({
         subs: Number(await env.GIST.get('subs')) || 0,
         categories: (await env.GIST.get('categories', 'json')) ?? [],
+      });
+    }
+
+    // 지꽁밥 — 확정 목록. 취소분은 화면에서 뺀다(달력에는 남아야 한다).
+    // GET 을 명시해야 한다. 안 그러면 아래 POST /api/meals 가 여기에 먼저 걸려
+    // 저장 대신 목록을 돌려준다.
+    if (pathname === '/api/meals' && req.method === 'GET') {
+      const all = (await env.GIST.get('meals', 'json')) ?? [];
+      return json(all.filter((m) => m.status !== 'cancelled'));
+    }
+
+    // 캘린더 구독용. 취소분까지 통째로 내보낸다 — 빼버리면 이미 구독한
+    // 달력에 유령으로 남는다.
+    if (pathname === '/api/meals.ics' && req.method === 'GET') {
+      const all = (await env.GIST.get('meals', 'json')) ?? [];
+      return new Response(toIcs(all, new Date()), {
+        headers: {
+          'content-type': 'text/calendar; charset=utf-8',
+          'cache-control': 'public, max-age=600',
+        },
       });
     }
 
