@@ -12,7 +12,7 @@
 import { parse } from './parse.js';
 import { diff } from './diff.js';
 import { sendPush } from './push.js';
-import { toIcs, normalize, mealError, pickDate, pickTime } from './meals.js';
+import { toIcs, normalize, mealError, pickDate, pickTime, looksLikeMeal } from './meals.js';
 
 // 게시판 주소는 wrangler.jsonc 의 vars.BOARD_URL 한 곳에만 있다.
 const detailUrl = (board, no) => `${board}?mode=V&no=${no}`;
@@ -124,6 +124,43 @@ async function refreshMeals(env) {
   return meals;
 }
 
+// 크론이 이미 파싱해둔 공지에서 식사 행사 후보만 골라 큐에 넣는다.
+// 게시판을 다시 긁지 않으므로 추가 요청이 0이다.
+async function queueFromNotices(items, board, env) {
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  let added = 0;
+
+  for (const c of items) {
+    if (!looksLikeMeal(c.title)) continue;
+
+    const id = `gist:${c.no}`;
+    // 이미 승인했거나 이미 큐에 있으면 건드리지 않는다.
+    // 내가 승인 화면에서 고쳐둔 값을 크론이 덮어쓰면 안 된다.
+    if (await env.GIST.get(`meal:${id}`)) continue;
+    if (await env.GIST.get(`mealq:${id}`)) continue;
+
+    await env.GIST.put(
+      `mealq:${id}`,
+      JSON.stringify({
+        id,
+        title: c.title,
+        text: c.title,
+        source: 'gist',
+        sourceUrl: detailUrl(board, c.no),
+        receivedAt: new Date().toISOString(),
+        // 게시 날짜(c.date)를 행사 날짜로 쓰지 않는다. 둘은 다르고, 틀린 날짜가
+        // 달력에 들어가는 것이 빈칸보다 나쁘다.
+        guess: { date: pickDate(c.title, today), start: pickTime(c.title) },
+      }),
+      { expirationTtl: QUEUE_TTL },
+    );
+    added += 1;
+  }
+
+  if (added > 0) console.log(`지꽁밥 후보 ${added}건 적재`);
+  return added;
+}
+
 // ===========================================================
 //  크론이 실제로 하는 일
 // ===========================================================
@@ -159,6 +196,7 @@ async function checkBoard(env) {
 
   // 검색 칩에 쓸 카테고리 목록. 지금까지 본 것들의 합집합.
   await mergeCategories(items, env);
+  await queueFromNotices(items, board, env);
   await refreshCount(env);
 
   let sent = 0;
