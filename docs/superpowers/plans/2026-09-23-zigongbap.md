@@ -411,7 +411,9 @@ export function pickTime(text) {
   const t = String(text ?? '');
 
   const hm = t.match(RE_HM);
-  if (hm) return `${pad(hm[1])}:${hm[2]}`;
+  // 범위를 넘으면 이 가지를 포기하고 한국어 표기로 넘어간다. 이 값은
+  // 승인 화면에 guess.start 로 그대로 보이므로 여기서 걸러야 한다.
+  if (hm && Number(hm[1]) <= 23 && Number(hm[2]) <= 59) return `${pad(hm[1])}:${hm[2]}`;
 
   const ko = t.match(RE_KO_TIME);
   if (!ko) return null;
@@ -538,7 +540,9 @@ const safeUrl = (v, max) => {
   }
 };
 const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const RE_TIME = /^\d{2}:\d{2}$/;
+// 모양만 보면 안 된다. '2024:2025 학년도' 같은 글자에서 뽑힌 24:20 이 통과하면
+// DTEND 가 DTSTART 보다 앞선 이벤트가 되어 일부 캘린더가 통째로 거부한다.
+const RE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
 
 export function normalize(input, prev = null) {
@@ -895,9 +899,14 @@ async function queueFromNotices(items, board, env) {
 
 - [ ] **Step 2: 크론에 연결한다**
 
-`checkBoard` 안, `await mergeCategories(items, env);` 바로 다음 줄에 넣는다:
+`checkBoard` 의 **맨 끝**, `lastNo` 를 쓴 다음 줄에 넣는다. 알림 발송보다 앞에
+두면 안 된다 — 여기서 던지면 그 회차 푸시가 통째로 안 나가고, 워커 한 번의
+subrequest 한도도 발송 몫을 깎아먹는다. 공지 알림이 이 앱의 본래 목적이고
+식사 후보는 30분 더 기다려도 된다:
 
 ```js
+  // 알림 발송과 lastNo 기록이 끝난 뒤에 돈다. 앞에 두면 여기서 실패했을 때
+  // 그 회차 푸시가 통째로 안 나간다.
   await queueFromNotices(items, board, env);
 ```
 
