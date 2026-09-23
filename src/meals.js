@@ -179,3 +179,52 @@ export function pickTime(text) {
   if (hour > 23) return null;
   return `${pad(hour)}:${pad(ko[3] ?? 0)}`;
 }
+
+// -----------------------------------------------------------
+//  정규화
+//
+//  후보에서 올라온 것이든 내가 손으로 넣은 것이든 같은 모양으로 만든다.
+//  KV 에 제각각인 모양이 들어가면 ICS 생성과 화면 양쪽이 터진다.
+// -----------------------------------------------------------
+const str = (v, max) => String(v ?? '').trim().slice(0, max);
+const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const RE_TIME = /^\d{2}:\d{2}$/;
+const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
+
+export function normalize(input, prev = null) {
+  const old = prev ?? {};
+  const take = (key, fallback) => (input[key] !== undefined ? input[key] : old[key] ?? fallback);
+  const signup = { ...(old.signup ?? {}), ...(input.signup ?? {}) };
+
+  return {
+    id: str(take('id', ''), 120),
+    title: str(take('title', ''), 200),
+    date: str(take('date', ''), 10),
+    start: time(take('start', null)),
+    end: time(take('end', null)),
+    place: str(take('place', ''), 120),
+    host: str(take('host', ''), 80),
+    signup: {
+      required: Boolean(signup.required),
+      url: str(signup.url, 500),
+      deadline: str(signup.deadline, 10),
+      capacity: Number.isFinite(Number(signup.capacity)) && signup.capacity !== null && signup.capacity !== ''
+        ? Number(signup.capacity)
+        : null,
+    },
+    source: str(take('source', 'manual'), 20),
+    sourceUrl: str(take('sourceUrl', ''), 500),
+    note: str(take('note', ''), 1000),
+    status: take('status', 'confirmed') === 'cancelled' ? 'cancelled' : 'confirmed',
+    // 캘린더는 SEQUENCE 가 올라가야 변경을 받아들인다. 안 올리면 무시한다.
+    seq: prev ? (Number(prev.seq) || 0) + 1 : 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function mealError(meal) {
+  if (!meal.id) return 'id 가 필요합니다';
+  if (!meal.title) return '제목이 필요합니다';
+  if (!RE_DATE.test(meal.date)) return '날짜는 YYYY-MM-DD 여야 합니다';
+  return null;
+}
