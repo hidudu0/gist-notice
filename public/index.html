@@ -102,6 +102,14 @@
   .msg.bad { color:var(--bad); }
   .msg.good { color:var(--ok); }
 
+  .tabs { display:flex; gap:4px; margin:0 0 18px; }
+  .tab {
+    flex:1; padding:10px; font-size:14px; font-weight:600;
+    color:var(--muted); background:none; border:none;
+    border-bottom:2px solid transparent; cursor:pointer;
+  }
+  .tab.on { color:var(--ink); border-bottom-color:var(--ink); }
+
   ol.steps { margin:0; padding-left:20px; color:var(--muted); }
   ol.steps li { margin:8px 0; }
   ol.steps b { color:var(--ink); }
@@ -212,6 +220,12 @@
     </a>
   </header>
 
+  <nav class="tabs">
+    <button class="tab on" data-tab="notice">공지</button>
+    <button class="tab" data-tab="meals">지꽁밥</button>
+  </nav>
+
+  <section id="tab-notice">
   <div class="panel" id="panel">
     <div class="msg">확인 중…</div>
   </div>
@@ -222,6 +236,11 @@
   <div class="chips" id="chips"></div>
   <div class="count" id="count"></div>
   <div id="list"><div class="msg">불러오는 중…</div></div>
+  </section>
+
+  <section id="tab-meals" hidden>
+    <div id="meals"><div class="msg">불러오는 중…</div></div>
+  </section>
 
 </div>
 
@@ -279,6 +298,31 @@ function toBytes(base64url) {
 }
 
 function render(html) { panel.innerHTML = html; }
+
+// -----------------------------------------------------------
+//  탭
+//
+//  보던 탭을 기억한다. 지꽁밥을 보려고 앱을 연 사람이 매번
+//  공지 탭부터 지나가지 않게.
+// -----------------------------------------------------------
+function showTab(name) {
+  for (const b of document.querySelectorAll('.tab')) {
+    b.classList.toggle('on', b.dataset.tab === name);
+  }
+  document.getElementById('tab-notice').hidden = name !== 'notice';
+  document.getElementById('tab-meals').hidden = name !== 'meals';
+  try { localStorage.setItem('tab', name); } catch { /* 사파리 비공개 모드 */ }
+  if (name === 'meals') loadMeals();
+}
+
+for (const b of document.querySelectorAll('.tab')) {
+  b.onclick = () => showTab(b.dataset.tab);
+}
+
+let savedTab = 'notice';
+try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
+showTab(savedTab);
+
 // fix 를 주면 문구 아래에 버튼이 하나 붙는다. 실패를 보여주기만 하고
 // 사용자가 할 수 있는 일이 없으면 앱을 지웠다 깔게 되므로, 한 번에
 // 고칠 수 있는 실패는 그 자리에서 고치게 한다.
