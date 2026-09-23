@@ -524,6 +524,19 @@ Expected: FAIL — `normalize is not a function`
 //  KV 에 제각각인 모양이 들어가면 ICS 생성과 화면 양쪽이 터진다.
 // -----------------------------------------------------------
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
+
+// 링크는 스킴까지 봐야 한다. 화면 쪽 escapeHtml 은 & < > " ' 만 바꾸므로
+// javascript: 가 그대로 살아 href 에서 실행된다. 그 화면은 localStorage 에
+// 관리자 토큰을 들고 있어서, 링크 한 번 누르면 토큰이 샌다.
+const safeUrl = (v, max) => {
+  const s = str(v, max);
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? s : '';
+  } catch {
+    return ''; // 상대경로나 깨진 값
+  }
+};
 const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const RE_TIME = /^\d{2}:\d{2}$/;
 const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
@@ -543,14 +556,14 @@ export function normalize(input, prev = null) {
     host: str(take('host', ''), 80),
     signup: {
       required: Boolean(signup.required),
-      url: str(signup.url, 500),
+      url: safeUrl(signup.url, 500),
       deadline: str(signup.deadline, 10),
       capacity: Number.isFinite(Number(signup.capacity)) && signup.capacity !== null && signup.capacity !== ''
         ? Number(signup.capacity)
         : null,
     },
     source: str(take('source', 'manual'), 20),
-    sourceUrl: str(take('sourceUrl', ''), 500),
+    sourceUrl: safeUrl(take('sourceUrl', ''), 500),
     note: str(take('note', ''), 1000),
     status: take('status', 'confirmed') === 'cancelled' ? 'cancelled' : 'confirmed',
     // 캘린더는 SEQUENCE 가 올라가야 변경을 받아들인다. 안 올리면 무시한다.
