@@ -13,6 +13,7 @@ import { parse } from './parse.js';
 import { diff } from './diff.js';
 import { sendPush } from './push.js';
 import { toIcs, normalize, mealError, pickDate, pickTime, looksLikeMeal } from './meals.js';
+import { fetchZiggleNotices, toCandidate } from './ziggle.js';
 
 // 게시판 주소는 wrangler.jsonc 의 vars.BOARD_URL 한 곳에만 있다.
 const detailUrl = (board, no) => `${board}?mode=V&no=${no}`;
@@ -126,39 +127,93 @@ async function refreshMeals(env) {
 
 // 크론이 이미 파싱해둔 공지에서 식사 행사 후보만 골라 큐에 넣는다.
 // 게시판을 다시 긁지 않으므로 추가 요청이 0이다.
+// KST 기준 오늘. 연도 없는 날짜를 추측할 때 기준으로 쓴다.
+const todayKST = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+
+// 후보 하나를 큐에 넣는다. 소스가 둘(학사공지·지글)이라 한 곳에 둔다.
+// 이미 승인했거나 이미 큐에 있으면 건드리지 않는다 — 승인 화면에서 고쳐둔
+// 값을 30분 뒤 크론이 덮어쓰면 안 된다.
+async function queueCandidate(env, c) {
+  if (await env.GIST.get(`meal:${c.id}`)) return false;
+  if (await env.GIST.get(`mealq:${c.id}`)) return false;
+
+  await env.GIST.put(
+    `mealq:${c.id}`,
+    JSON.stringify({ ...c, receivedAt: new Date().toISOString() }),
+    { expirationTtl: QUEUE_TTL },
+  );
+  return true;
+}
+
 async function queueFromNotices(items, board, env) {
-  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = todayKST();
   let added = 0;
 
   for (const c of items) {
     if (!looksLikeMeal(c.title)) continue;
-
-    const id = `gist:${c.no}`;
-    // 이미 승인했거나 이미 큐에 있으면 건드리지 않는다.
-    // 내가 승인 화면에서 고쳐둔 값을 크론이 덮어쓰면 안 된다.
-    if (await env.GIST.get(`meal:${id}`)) continue;
-    if (await env.GIST.get(`mealq:${id}`)) continue;
-
-    await env.GIST.put(
-      `mealq:${id}`,
-      JSON.stringify({
-        id,
-        title: c.title,
-        text: c.title,
-        source: 'gist',
-        sourceUrl: detailUrl(board, c.no),
-        receivedAt: new Date().toISOString(),
-        // 게시 날짜(c.date)를 행사 날짜로 쓰지 않는다. 둘은 다르고, 틀린 날짜가
-        // 달력에 들어가는 것이 빈칸보다 나쁘다.
-        guess: { date: pickDate(c.title, today), start: pickTime(c.title) },
-      }),
-      { expirationTtl: QUEUE_TTL },
-    );
-    added += 1;
+    const ok = await queueCandidate(env, {
+      id: `gist:${c.no}`,
+      title: c.title,
+      text: c.title,
+      source: 'gist',
+      sourceUrl: detailUrl(board, c.no),
+      // 게시 날짜(c.date)를 행사 날짜로 쓰지 않는다. 둘은 다르고, 틀린 날짜가
+      // 달력에 들어가는 것이 빈칸보다 나쁘다.
+      guess: { date: pickDate(c.title, today), start: pickTime(c.title) },
+    });
+    if (ok) added += 1;
   }
 
-  if (added > 0) console.log(`지꽁밥 후보 ${added}건 적재`);
+  if (added > 0) console.log(`지꽁밥 후보(학사공지) ${added}건 적재`);
   return added;
+}
+
+// 지글은 남의 서비스다. 토큰이 만료되거나 API 가 바뀌면 여기서 실패하는데,
+// 그렇다고 공지 알림까지 말려들면 안 된다. 통째로 감싸고 조용히 물러난다.
+async function queueFromZiggle(env) {
+  let items;
+  try {
+    items = await fetchZiggleNotices(env);
+  } catch (err) {
+    console.error('지글 수집 실패:', String(err));
+    if (err.tokenDead) await noteZiggleTokenDead(env);
+    return 0;
+  }
+
+  await env.GIST.delete('ziggleAlerted'); // 살아났으니 알림 억제를 푼다
+
+  const today = todayKST();
+  let added = 0;
+  for (const n of items) {
+    const c = toCandidate(n, today);
+    if (c && (await queueCandidate(env, c))) added += 1;
+  }
+
+  if (added > 0) console.log(`지꽁밥 후보(지글) ${added}건 적재`);
+  return added;
+}
+
+// 토큰이 죽으면 사람이 지글에 다시 로그인해 넣는 수밖에 없다. 조용히 죽으면
+// 몇 주 뒤에야 알아채므로 알린다. 30분마다 도배되지 않게 하루 한 번만.
+async function noteZiggleTokenDead(env) {
+  if (await env.GIST.get('ziggleAlerted')) return;
+  await env.GIST.put('ziggleAlerted', '1', { expirationTtl: 24 * 3600 });
+
+  const key = await env.GIST.get('adminSub');
+  if (!key) return;
+  const sub = await env.GIST.get(key, 'json');
+  if (!sub) return;
+
+  await sendPush(
+    sub,
+    {
+      title: '⚠️ 지글 토큰 만료',
+      body: '지글에 다시 로그인해 토큰을 넣어주세요. DEPLOY.md 참고',
+      url: '/',
+      tag: `ziggle-${Date.now()}`,
+    },
+    env,
+  ).catch((e) => console.error('관리자 알림 실패:', String(e)));
 }
 
 // ===========================================================
@@ -209,6 +264,7 @@ async function checkBoard(env) {
   // 순서를 바꾸는 김에 이 작업이 쓰는 KV 요청도 발송이 쓰는 subrequest
   // 예산 밖으로 빠진다.
   await queueFromNotices(items, board, env);
+  await queueFromZiggle(env);
 
   console.log(`확인 완료: 파싱 ${items.length}건, 새 글 ${fresh.length}건, 발송 ${sent}건`);
   return { fresh: fresh.length, sent };
