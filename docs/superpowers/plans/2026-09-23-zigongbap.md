@@ -184,14 +184,16 @@ function nextDay(date) {
 
 function plusHour(hhmm) {
   const [hh, mm] = hhmm.split(':').map(Number);
-  return `${pad((hh + 1) % 24)}:${pad(mm)}`;
+  // 자정을 넘기면 같은 날짜에 붙는 DTEND 가 DTSTART 보다 앞서게 된다.
+  // 길이가 음수인 이벤트는 캘린더가 조용히 무시한다. 그날 끝으로 자른다.
+  return hh >= 23 ? '23:59' : `${pad(hh + 1)}:${pad(mm)}`;
 }
 
 // 역슬래시를 먼저 바꿔야 한다. 나중에 바꾸면 뒤에 넣은 역슬래시까지 또 바뀐다.
 const esc = (s) =>
   String(s)
     .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\;')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
 
