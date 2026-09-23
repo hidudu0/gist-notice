@@ -525,7 +525,14 @@ export default {
     if (pathname.startsWith('/api/meals/') && req.method === 'DELETE') {
       if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
 
-      const id = decodeURIComponent(pathname.slice('/api/meals/'.length));
+      // 깨진 퍼센트 인코딩(예: /api/meals/%)은 decodeURIComponent 가 던진다.
+      // 그대로 두면 잘못된 주소 하나가 500 으로 보인다.
+      let id;
+      try {
+        id = decodeURIComponent(pathname.slice('/api/meals/'.length));
+      } catch {
+        return json({ error: '주소가 올바르지 않습니다' }, 400);
+      }
       const prev = await env.GIST.get(`meal:${id}`, 'json');
       if (!prev) return json({ error: '없는 이벤트입니다' }, 404);
 

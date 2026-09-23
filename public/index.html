@@ -57,7 +57,12 @@
   .board img { width:34px; height:34px; border-radius:9px; display:block; }
   .board:hover { background:var(--card); color:var(--ink); }
   .board:active { transform:translateY(1px); }
-  h1 { font-size:19px; margin:0; letter-spacing:-.02em; }
+  /* 길게 눌러 관리자 토큰을 넣는다. iOS 가 길게 누르기를 글자 선택으로
+     가로채면 입력창이 안 뜨므로 선택과 콜아웃을 막는다. */
+  h1 {
+    font-size:19px; margin:0; letter-spacing:-.02em;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+  }
   .sub { color:var(--muted); font-size:13px; margin:2px 0 0; }
 
   .panel {
@@ -106,7 +111,8 @@
   .meal h3 { margin:0 0 6px; font-size:15px; font-weight:600; }
   .meal-meta { font-size:13px; color:var(--muted); }
   .meal-note { margin:8px 0 0; font-size:13px; color:var(--muted); }
-  .meal-links { display:flex; gap:12px; margin-top:8px; }
+  .meal-links { display:flex; gap:12px; margin-top:8px; align-items:center; }
+  .meal-links .danger { color:var(--bad); }
   .ghost-link { font-size:13px; color:var(--muted); text-decoration:underline; }
 
   .admin-h { margin:18px 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
@@ -314,6 +320,44 @@ if (adminMatch) {
   localStorage.setItem('adminToken', decodeURIComponent(adminMatch[1]));
   history.replaceState(null, '', location.pathname);
 }
+// 홈 화면 앱(PWA)에는 주소창이 없어서 #admin= 해시를 넣을 방법이 없다.
+// iOS 는 PWA 와 사파리의 저장소를 분리하므로 사파리에서 심어도 앱은 못 본다.
+// 그래서 앱 안에 입구를 둔다 — 제목을 길게 누르면 토큰을 물어본다.
+// 제스처는 비밀이 아니다. 잠그는 것은 여전히 토큰이다.
+function askAdminToken() {
+  const v = prompt('관리자 토큰 (비우고 확인하면 해제)', '');
+  if (v === null) return; // 취소
+  try {
+    if (v.trim()) {
+      localStorage.setItem('adminToken', v.trim());
+      alert('관리자로 등록했습니다');
+    } else {
+      localStorage.removeItem('adminToken');
+      alert('관리자 등록을 해제했습니다');
+    }
+  } catch {
+    alert('이 브라우저에서는 저장할 수 없습니다 (비공개 모드?)');
+    return;
+  }
+  // 화면을 바로 맞춘다. 관리자 블록은 loadQueue 가 켜고 끈다.
+  adminEl.hidden = !isAdmin();
+  loadQueue();
+  loadMeals();
+}
+
+(() => {
+  const title = document.querySelector('header h1');
+  let timer = null;
+  const start = () => { timer = setTimeout(askAdminToken, 800); };
+  const stop = () => { clearTimeout(timer); timer = null; };
+  title.addEventListener('touchstart', start, { passive: true });
+  for (const e of ['touchend', 'touchmove', 'touchcancel']) {
+    title.addEventListener(e, stop, { passive: true });
+  }
+  title.addEventListener('mousedown', start);
+  for (const e of ['mouseup', 'mouseleave']) title.addEventListener(e, stop);
+})();
+
 const adminHeaders = () => {
   const t = localStorage.getItem('adminToken');
   return t ? { 'x-admin-token': t } : {};
@@ -684,6 +728,9 @@ async function loadMeals() {
     }
 
     mealsEl.innerHTML = head + upcoming.map(mealCard).join('');
+    for (const b of mealsEl.querySelectorAll('[data-cancel]')) {
+      b.onclick = () => cancelMeal(b.dataset.cancel, b.dataset.title);
+    }
   } catch (err) {
     console.error('지꽁밥 불러오기 실패', err);
     const why = navigator.onLine ? err.message : '오프라인';
@@ -702,12 +749,36 @@ function mealCard(m) {
   const src = m.sourceUrl
     ? `<a class="ghost-link" href="${escapeHtml(m.sourceUrl)}" target="_blank" rel="noopener">원문</a>`
     : '';
+  // 승인은 폰에서 되는데 취소는 터미널에서만 되면 비대칭이다.
+  const drop = isAdmin()
+    ? `<button class="ghost danger" data-cancel="${escapeHtml(m.id)}"
+         data-title="${escapeHtml(m.title)}">내리기</button>`
+    : '';
   return `<article class="meal">
     <h3>${escapeHtml(m.title)}</h3>
     <div class="meal-meta">${escapeHtml(when)}${where}</div>
     ${m.note ? `<p class="meal-note">${escapeHtml(m.note)}</p>` : ''}
-    <div class="meal-links">${signup}${src}</div>
+    <div class="meal-links">${signup}${src}${drop}</div>
   </article>`;
+}
+
+// 내리기는 KV 에서 지우는 게 아니라 취소 표시로 바꾼다. 이미 구독한 달력에서
+// 사라지게 하려면 STATUS:CANCELLED 를 한동안 계속 실어 보내야 하기 때문이다.
+async function cancelMeal(id, title) {
+  if (!confirm(`"${title}" 을(를) 내릴까요?\n\n목록에서 빠지고, 캘린더 구독자에게는 취소로 표시됩니다.`)) return;
+  try {
+    const res = await fetch(`/api/meals/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: adminHeaders(),
+    });
+    const info = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(info.error || `응답 ${res.status}`);
+    loadMeals();
+    loadQueue();
+  } catch (err) {
+    console.error('내리기 실패', err);
+    alert('내리지 못했습니다: ' + err.message);
+  }
 }
 
 // 공지 제목은 남이 쓴 글이다. 그대로 innerHTML 에 넣으면 안 된다.
