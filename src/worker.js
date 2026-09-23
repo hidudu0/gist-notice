@@ -330,9 +330,31 @@ export default {
       // 유일한 지점이라, 테스트 버튼이 청소도 겸한다.
       if (await dropIfGone(res, key, env)) {
         await refreshCount(env);
-        return json({ error: '이 구독은 만료됐습니다. 알림을 껐다가 다시 켜주세요' }, 410);
+        console.error('테스트 푸시: 만료된 구독', res.status, new URL(sub.endpoint).host);
+        // fixable: 앱이 "알림 다시 켜기" 버튼을 띄울 수 있다는 표시.
+        return json(
+          { error: '이 구독은 만료됐습니다', status: res.status, fixable: true },
+          410,
+        );
       }
-      if (!res.ok) return json({ error: `푸시 서비스 응답 ${res.status}` }, 502);
+
+      // 실패 원인은 본문에만 있다 (APNs 의 BadJwtToken, FCM 의
+      // UNREGISTERED 등). 크론 쪽은 이미 본문을 남기는데 여기만 버리고
+      // 있어서, 테스트 버튼이 실패해도 코드 하나 말고는 알 길이 없었다.
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => '')).slice(0, 300);
+        console.error('테스트 푸시 실패', res.status, detail);
+        return json(
+          {
+            error: `푸시 서비스 응답 ${res.status}`,
+            status: res.status,
+            detail,
+            // 400·403 은 구독과 서버 키가 어긋난 경우라 다시 구독하면 풀린다.
+            fixable: res.status === 400 || res.status === 403,
+          },
+          502,
+        );
+      }
       return json({ ok: true });
     }
 

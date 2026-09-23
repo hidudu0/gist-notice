@@ -279,9 +279,20 @@ function toBytes(base64url) {
 }
 
 function render(html) { panel.innerHTML = html; }
-function say(text, kind = '') {
+// fix 를 주면 문구 아래에 버튼이 하나 붙는다. 실패를 보여주기만 하고
+// 사용자가 할 수 있는 일이 없으면 앱을 지웠다 깔게 되므로, 한 번에
+// 고칠 수 있는 실패는 그 자리에서 고치게 한다.
+function say(text, kind = '', fix = null) {
   const el = document.getElementById('msg');
-  if (el) { el.textContent = text; el.className = 'msg ' + kind; }
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'msg ' + kind;
+  if (!fix) return;
+  const btn = document.createElement('button');
+  btn.className = 'ghost';
+  btn.textContent = fix.label;
+  btn.onclick = fix.run;
+  el.append(document.createElement('br'), btn);
 }
 
 const postJson = (path, body, extra = {}) =>
@@ -383,7 +394,10 @@ async function subscribe() {
     });
 
     const res = await postJson('/api/subscribe', sub.toJSON(), adminHeaders());
-    if (!res.ok) throw new Error('서버 등록 실패 ' + res.status);
+    if (!res.ok) {
+      const info = await res.json().catch(() => ({}));
+      throw new Error(`서버 등록 실패 ${res.status}${info.error ? ` — ${info.error}` : ''}`);
+    }
 
     showButton(true);
     say('알림이 켜졌습니다', 'good');
@@ -409,8 +423,26 @@ async function unsubscribe() {
     loadMeta();
   } catch (err) {
     btn.disabled = false;
+    console.error('구독 해제 실패', err);
     say('실패: ' + err.message, 'bad');
   }
+}
+
+// 껐다 켜기를 한 번에. 만료된 구독, 서버 키와 어긋난 구독은 이걸로 풀린다.
+async function resubscribe() {
+  say('알림을 다시 켜는 중…');
+  try {
+    const sub = await currentSub();
+    if (sub) {
+      // 서버 기록부터 지운다. 브라우저 쪽만 지우면 KV 에 유령이 남는다.
+      await postJson('/api/unsubscribe', sub.toJSON()).catch(() => {});
+      await sub.unsubscribe();
+    }
+  } catch (err) {
+    console.error('재구독 준비 실패', err);
+  }
+  showButton(false);
+  await subscribe();
 }
 
 // 알림이 실제로 오는지 지금 확인한다. 안 그러면 다음 공지가 올라올 때까지
@@ -423,10 +455,25 @@ async function sendTest() {
     const sub = await currentSub();
     if (!sub) throw new Error('구독 정보가 없습니다');
     const res = await postJson('/api/test', sub.toJSON());
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
+    if (!res.ok) {
+      const info = await res.json().catch(() => ({}));
+      // 서버가 준 코드와 본문을 화면에 그대로 남긴다. 스크린샷 한 장이면
+      // 원인이 잡힌다 — 예전에는 '실패: 푸시 서비스 응답 403' 이 전부였다.
+      const err = new Error(
+        [info.error || `응답 ${res.status}`, info.detail].filter(Boolean).join(' — '),
+      );
+      err.fixable = Boolean(info.fixable);
+      err.status = info.status ?? res.status;
+      throw err;
+    }
     say('보냈습니다. 잠시 뒤 알림이 오는지 확인하세요', 'good');
   } catch (err) {
-    say('실패: ' + err.message, 'bad');
+    console.error('테스트 알림 실패', err.status ?? '', err);
+    say(
+      '실패: ' + err.message,
+      'bad',
+      err.fixable ? { label: '알림 다시 켜기', run: resubscribe } : null,
+    );
   }
   btn.disabled = false;
 }
@@ -517,15 +564,26 @@ async function loadMeta() {
     const { subs, categories } = await (await fetch('/api/meta')).json();
     if (subs > 0) tagline.textContent = `${subs}명이 구독 중입니다`;
     if (categories.length) renderChips(categories);
-  } catch { /* 칩이 없어도 검색창은 동작한다 */ }
+  } catch (err) {
+    // 칩이 없어도 검색창은 동작하므로 화면은 막지 않는다. 기록만 남긴다.
+    console.error('메타 불러오기 실패', err);
+  }
 }
 
 async function loadList() {
   try {
-    items = await (await fetch('/api/latest')).json();
+    const res = await fetch('/api/latest');
+    // res.ok 를 안 보면 5xx 의 HTML 에러 페이지가 그대로 .json() 에 들어가
+    // 오프라인과 서버 장애가 똑같은 문구로 보인다.
+    if (!res.ok) throw new Error('응답 ' + res.status);
+    items = await res.json();
     renderList();
-  } catch {
-    listEl.innerHTML = `<div class="msg bad">목록을 불러오지 못했습니다</div>`;
+  } catch (err) {
+    console.error('목록 불러오기 실패', err);
+    const why = navigator.onLine ? err.message : '오프라인';
+    listEl.innerHTML = `<div class="msg bad">목록을 불러오지 못했습니다 (${escapeHtml(why)})<br>
+      <button class="ghost" id="retry">다시 시도</button></div>`;
+    document.getElementById('retry').onclick = loadList;
   }
 }
 
