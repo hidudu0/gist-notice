@@ -115,3 +115,67 @@ export function toIcs(meals, now = new Date()) {
   // 엄격한 파서가 투덜댈 수 있다. 실제로 깨지면 그때 접는다.
   return lines.join('\r\n');
 }
+
+// -----------------------------------------------------------
+//  후보 거르기
+//
+//  음식 단어와 공짜 단어가 둘 다 있어야 걸린다. "무료" 하나로 거르면
+//  무료 특강·무료 검진까지 전부 들어와 큐가 시끄러워진다.
+//  거르기만 하고 판단은 안 한다 — 최종 판단은 승인 화면에서 사람이 한다.
+// -----------------------------------------------------------
+const FOOD = /중식|석식|간식|다과|도시락|피자|치킨|식사|점심|저녁|조식|간담회/;
+const FREE = /무료|무상|제공|나눔|배부|선착순|참가비\s*없/;
+
+export const looksLikeMeal = (text) => {
+  const t = String(text ?? '');
+  return FOOD.test(t) && FREE.test(t);
+};
+
+// -----------------------------------------------------------
+//  날짜·시각 뽑기
+//
+//  공지 제목에서 뽑을 수 있는 만큼만 뽑는다. 못 뽑으면 빈 값을 주고
+//  승인 화면에서 사람이 채운다. 억지로 맞히면 잘못된 날짜가 캘린더에
+//  들어가는데, 그게 비어 있는 것보다 나쁘다.
+// -----------------------------------------------------------
+const RE_FULL = /(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/;
+const RE_MD = /(\d{1,2})\s*월\s*(\d{1,2})\s*일|(?<!\d)(\d{1,2})\/(\d{1,2})(?!\d)/;
+
+export function pickDate(text, today) {
+  const t = String(text ?? '');
+
+  const full = t.match(RE_FULL);
+  if (full) return `${full[1]}-${pad(full[2])}-${pad(full[3])}`;
+
+  const md = t.match(RE_MD);
+  if (!md) return '';
+  const month = Number(md[1] ?? md[3]);
+  const day = Number(md[2] ?? md[4]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+
+  // 연도가 안 적힌 공지는 거의 올해 것이다. 다만 12월에 "1월 5일" 이라고
+  // 쓰면 내년이다. 두 달 넘게 지난 날짜면 내년으로 본다.
+  const year = Number(today.slice(0, 4));
+  const guess = `${year}-${pad(month)}-${pad(day)}`;
+  const gap = (Date.parse(today) - Date.parse(guess)) / 86400000;
+  return gap > 60 ? `${year + 1}-${pad(month)}-${pad(day)}` : guess;
+}
+
+const RE_HM = /(\d{1,2}):(\d{2})/;
+const RE_KO_TIME = /(오전|오후)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/;
+
+export function pickTime(text) {
+  const t = String(text ?? '');
+
+  const hm = t.match(RE_HM);
+  if (hm) return `${pad(hm[1])}:${hm[2]}`;
+
+  const ko = t.match(RE_KO_TIME);
+  if (!ko) return null;
+  let hour = Number(ko[2]);
+  // "오후 12시" 는 12시다. 12를 더하면 24시가 된다.
+  if (ko[1] === '오후' && hour < 12) hour += 12;
+  if (ko[1] === '오전' && hour === 12) hour = 0;
+  if (hour > 23) return null;
+  return `${pad(hour)}:${pad(ko[3] ?? 0)}`;
+}
