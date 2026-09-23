@@ -126,6 +126,35 @@ KV 에서 지우지 않고 취소 표시로 바꾼다. 이미 구독한 캘린�
 하려면 `STATUS:CANCELLED` 를 30일간 계속 실어 보내야 하기 때문이다. 그냥
 지우면 남의 달력에 유령으로 남는다.
 
+### 지글 토큰 (2단계)
+
+후보의 절반 이상은 지글에서 온다. 지글 API 는 로그인이 필요하고, 토큰은
+KV `ziggleRefresh` 에 들어 있다. **쓸 때마다 회전한다** — 크론이 갱신하면
+브라우저 쪽 지글 세션이 끊길 수 있고, 반대도 마찬가지다. 지글 웹을 자주 쓰면
+크론이 멈출 수 있다.
+
+만료되면 관리자 기기로 **⚠️ 지글 토큰 만료** 알림이 온다 (하루 한 번만).
+그때 다시 넣는 절차:
+
+1. 지글에서 **로그아웃 → 로그인**
+2. 지글 탭 콘솔에서 클립보드로만 복사:
+   ```js
+   copy(JSON.parse(localStorage.getItem('ROCP_refreshToken')))
+   ```
+3. 터미널:
+   ```bash
+   pbpaste > /tmp/zr.txt
+   wc -c < /tmp/zr.txt        # 43 또는 44 여야 한다
+   npx wrangler kv key put ziggleRefresh --path /tmp/zr.txt --binding GIST --remote
+   npx wrangler kv key get ziggleRefresh --binding GIST --remote | wc -c   # 43~44 확인
+   rm -P /tmp/zr.txt
+   ```
+
+**확인하기 전에 임시 파일을 지우지 않는다.** 쓰기가 실패했는데 지우면 토큰이
+사라지고, 이전 것은 이미 죽어 있어 1번부터 다시 해야 한다.
+
+`--path` 를 쓰는 이유는 토큰이 명령줄에 안 들어가 셸 히스토리에 안 남기 때문이다.
+
 ### 캘린더 구독
 
 지꽁밥 탭의 **캘린더에 추가** 를 누르면 `webcal://` 로 캘린더 앱이 열린다.

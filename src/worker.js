@@ -356,9 +356,13 @@ async function sendToAll(data, env) {
   // ponytail: Workers 무료 플랜의 호출당 50개 한도는 fetch 뿐 아니라 KV 호출도
   // 센다. 크론 한 번이 여기 도달하기 전에 이미 게시판 fetch, lastNo, failStreak,
   // 아카이브·카테고리 병합, refreshCount, 이 함수의 list 로 9개를 쓰고, 구독자
-  // 한 명당 KV get + push fetch 로 2개씩 더 쓴다. 그래서 실제 상한은 구독자
-  // 20명 근처다. 그 이상이면 유료 플랜(1000개)으로 올리거나 여러 번에 나눠
-  // 보내야 한다.
+  // 한 명당 KV get + push fetch 로 2개씩 더 쓴다. 그래서 알림까지의 상한은
+  // 구독자 20명 근처다. 그 이상이면 유료 플랜(1000개)으로 올리거나 여러 번에
+  // 나눠 보내야 한다.
+  //
+  // 지꽁밥 후보 적재는 이 발송이 끝난 뒤에 돈다. 지글 토큰을 새로 받는 회차는
+  // 거기서만 7~8개를 더 쓰므로 한도를 먼저 넘을 수 있는데, 그때 죽는 것은
+  // 후보 적재뿐이고 알림은 이미 나간 뒤다. 순서가 그래서 중요하다.
   const results = await Promise.allSettled(
     list.keys.map(async ({ name }) => {
       const sub = await env.GIST.get(name, 'json');
