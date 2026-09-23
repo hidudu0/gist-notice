@@ -65,7 +65,7 @@ test('취소된 이벤트는 빠지지 않고 STATUS:CANCELLED 로 남는다', (
 test('쉼표·세미콜론·역슬래시·줄바꿈을 이스케이프한다', () => {
   const m = { ...기본, title: '피자, 치킨; 무료\\다', note: '1층\n2층' };
   const ics = toIcs([m], NOW);
-  assert.match(ics, /SUMMARY:피자\\, 치킨\; 무료\\\\다/);
+  assert.match(ics, /SUMMARY:피자\\, 치킨\\; 무료\\\\다/);
   assert.match(ics, /DESCRIPTION:.*1층\\n2층/);
 });
 
@@ -80,4 +80,13 @@ test('이벤트가 없어도 빈 달력을 돌려준다', () => {
   const ics = toIcs([], NOW);
   assert.match(ics, /BEGIN:VCALENDAR/);
   assert.ok(!ics.includes('BEGIN:VEVENT'));
+});
+
+test('자정 직전 이벤트는 DTEND 가 음수가 되지 않는다', () => {
+  const m = { ...기본, start: '23:00' };
+  const ics = toIcs([m], NOW);
+  // 23:00 은 UTC+9 이므로 14:00Z 이다
+  assert.match(ics, /DTSTART:20260925T140000Z/);
+  // DTEND 는 23:59 가 되므로 14:59Z
+  assert.match(ics, /DTEND:20260925T145900Z/);
 });

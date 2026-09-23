@@ -44,14 +44,17 @@ function nextDay(date) {
 
 function plusHour(hhmm) {
   const [hh, mm] = hhmm.split(':').map(Number);
-  return `${pad((hh + 1) % 24)}:${pad(mm)}`;
+  // 23시일 때는 00시가 아니라 23:59로 고정한다.
+  // 아니면 DTEND 가 DTSTART 보다 앞이 되어 음수 길이 이벤트가 된다.
+  if (hh >= 23) return '23:59';
+  return `${pad(hh + 1)}:${pad(mm)}`;
 }
 
 // 역슬래시를 먼저 바꿔야 한다. 나중에 바꾸면 뒤에 넣은 역슬래시까지 또 바뀐다.
 const esc = (s) =>
   String(s)
     .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\;')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
 
