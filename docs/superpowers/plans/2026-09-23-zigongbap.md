@@ -978,7 +978,18 @@ function showTab(name) {
 for (const b of document.querySelectorAll('.tab')) {
   b.onclick = () => showTab(b.dataset.tab);
 }
+```
 
+그리고 스크립트 **맨 끝**, 기존 `start(); loadMeta(); loadList();` **뒤에** 넣는다.
+앞에 두면 안 된다 — `showTab` 이 던지면 뒤따르는 세 줄이 통째로 안 돈다:
+
+```js
+start();
+loadMeta();
+loadList();
+
+// 보던 탭 복원은 맨 마지막이다. 앞에 두면 showTab 안에서 예외가 났을 때
+// 나머지 초기화가 통째로 멈춰 공지 화면까지 죽는다.
 let savedTab = 'notice';
 try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
 showTab(savedTab);
