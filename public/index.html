@@ -102,6 +102,30 @@
   .msg.bad { color:var(--bad); }
   .msg.good { color:var(--ok); }
 
+  .meal { padding:14px 0; border-bottom:1px solid var(--line); }
+  .meal h3 { margin:0 0 6px; font-size:15px; font-weight:600; }
+  .meal-meta { font-size:13px; color:var(--muted); }
+  .meal-note { margin:8px 0 0; font-size:13px; color:var(--muted); }
+  .meal-links { display:flex; gap:12px; margin-top:8px; }
+  .ghost-link { font-size:13px; color:var(--muted); text-decoration:underline; }
+
+  .admin-h { margin:18px 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
+  .meal-form { display:flex; flex-direction:column; gap:8px; }
+  .meal-form input {
+    padding:10px; font-size:14px; color:var(--ink);
+    background:none; border:1px solid var(--line); border-radius:8px;
+  }
+  .queue-item { padding:12px 0; border-bottom:1px solid var(--line); }
+  .queue-item .meal-links { margin-top:6px; }
+
+  .tabs { display:flex; gap:4px; margin:0 0 18px; }
+  .tab {
+    flex:1; padding:10px; font-size:14px; font-weight:600;
+    color:var(--muted); background:none; border:none;
+    border-bottom:2px solid transparent; cursor:pointer;
+  }
+  .tab.on { color:var(--ink); border-bottom-color:var(--ink); }
+
   ol.steps { margin:0; padding-left:20px; color:var(--muted); }
   ol.steps li { margin:8px 0; }
   ol.steps b { color:var(--ink); }
@@ -212,6 +236,12 @@
     </a>
   </header>
 
+  <nav class="tabs">
+    <button class="tab on" data-tab="notice">공지</button>
+    <button class="tab" data-tab="meals">지꽁밥</button>
+  </nav>
+
+  <section id="tab-notice">
   <div class="panel" id="panel">
     <div class="msg">확인 중…</div>
   </div>
@@ -222,6 +252,26 @@
   <div class="chips" id="chips"></div>
   <div class="count" id="count"></div>
   <div id="list"><div class="msg">불러오는 중…</div></div>
+  </section>
+
+  <section id="tab-meals" hidden>
+    <div id="admin" hidden>
+      <h2 class="admin-h">승인 대기</h2>
+      <div id="queue"></div>
+      <h2 class="admin-h">직접 추가</h2>
+      <form id="meal-form" class="meal-form">
+        <input name="title" placeholder="제목" required>
+        <input name="date" placeholder="YYYY-MM-DD" required>
+        <input name="start" placeholder="HH:MM (없으면 비움)">
+        <input name="place" placeholder="장소">
+        <input name="signupUrl" placeholder="신청 링크">
+        <input name="note" placeholder="메모">
+        <button type="submit">추가</button>
+      </form>
+      <div class="msg" id="admin-msg"></div>
+    </div>
+    <div id="meals"><div class="msg">불러오는 중…</div></div>
+  </section>
 
 </div>
 
@@ -279,6 +329,27 @@ function toBytes(base64url) {
 }
 
 function render(html) { panel.innerHTML = html; }
+
+// -----------------------------------------------------------
+//  탭
+//
+//  보던 탭을 기억한다. 지꽁밥을 보려고 앱을 연 사람이 매번
+//  공지 탭부터 지나가지 않게.
+// -----------------------------------------------------------
+function showTab(name) {
+  for (const b of document.querySelectorAll('.tab')) {
+    b.classList.toggle('on', b.dataset.tab === name);
+  }
+  document.getElementById('tab-notice').hidden = name !== 'notice';
+  document.getElementById('tab-meals').hidden = name !== 'meals';
+  try { localStorage.setItem('tab', name); } catch { /* 사파리 비공개 모드 */ }
+  if (name === 'meals') { loadMeals(); loadQueue(); }
+}
+
+for (const b of document.querySelectorAll('.tab')) {
+  b.onclick = () => showTab(b.dataset.tab);
+}
+
 // fix 를 주면 문구 아래에 버튼이 하나 붙는다. 실패를 보여주기만 하고
 // 사용자가 할 수 있는 일이 없으면 앱을 지웠다 깔게 되므로, 한 번에
 // 고칠 수 있는 실패는 그 자리에서 고치게 한다.
@@ -587,11 +658,164 @@ async function loadList() {
   }
 }
 
+// -----------------------------------------------------------
+//  지꽁밥
+//
+//  지난 행사는 숨긴다. 오늘 것은 남긴다 — 점심이 아직 안 지났을 수 있다.
+// -----------------------------------------------------------
+const mealsEl = document.getElementById('meals');
+
+async function loadMeals() {
+  try {
+    const res = await fetch('/api/meals');
+    if (!res.ok) throw new Error('응답 ' + res.status);
+    const all = await res.json();
+
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    const upcoming = all.filter((m) => m.date >= today);
+
+    const feed = `${location.origin}/api/meals.ics`;
+    const head = `<a class="ghost-link" href="webcal://${location.host}/api/meals.ics">캘린더에 추가</a>
+      <div class="msg">안 되면 이 주소를 캘린더 앱에 붙여넣으세요<br>${escapeHtml(feed)}</div>`;
+
+    if (upcoming.length === 0) {
+      mealsEl.innerHTML = `${head}<div class="msg">예정된 행사가 없습니다</div>`;
+      return;
+    }
+
+    mealsEl.innerHTML = head + upcoming.map(mealCard).join('');
+  } catch (err) {
+    console.error('지꽁밥 불러오기 실패', err);
+    const why = navigator.onLine ? err.message : '오프라인';
+    mealsEl.innerHTML = `<div class="msg bad">불러오지 못했습니다 (${escapeHtml(why)})<br>
+      <button class="ghost" id="meals-retry">다시 시도</button></div>`;
+    document.getElementById('meals-retry').onclick = loadMeals;
+  }
+}
+
+function mealCard(m) {
+  const when = m.start ? `${m.date} ${m.start}` : m.date;
+  const where = m.place ? ` · ${escapeHtml(m.place)}` : '';
+  const signup = m.signup?.url
+    ? `<a class="ghost-link" href="${escapeHtml(m.signup.url)}" target="_blank" rel="noopener">신청하기</a>`
+    : '';
+  const src = m.sourceUrl
+    ? `<a class="ghost-link" href="${escapeHtml(m.sourceUrl)}" target="_blank" rel="noopener">원문</a>`
+    : '';
+  return `<article class="meal">
+    <h3>${escapeHtml(m.title)}</h3>
+    <div class="meal-meta">${escapeHtml(when)}${where}</div>
+    ${m.note ? `<p class="meal-note">${escapeHtml(m.note)}</p>` : ''}
+    <div class="meal-links">${signup}${src}</div>
+  </article>`;
+}
+
 // 공지 제목은 남이 쓴 글이다. 그대로 innerHTML 에 넣으면 안 된다.
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// -----------------------------------------------------------
+//  관리자 — 승인 큐
+//
+//  adminToken 이 있어야 보인다. 탭 자체는 누구나 보지만, 무엇을 공개할지는
+//  내가 정한다. 남의 폰에 내 메일에서 나온 게 그냥 나가면 안 된다.
+// -----------------------------------------------------------
+const adminEl = document.getElementById('admin');
+const queueEl = document.getElementById('queue');
+const adminMsg = document.getElementById('admin-msg');
+
+const isAdmin = () => Boolean(localStorage.getItem('adminToken'));
+
+async function loadQueue() {
+  if (!isAdmin()) return;
+  adminEl.hidden = false;
+  try {
+    const res = await fetch('/api/meals/queue', { headers: adminHeaders() });
+    if (!res.ok) throw new Error('응답 ' + res.status);
+    const items = await res.json();
+    queueEl.innerHTML = items.length
+      ? items.map(queueCard).join('')
+      : '<div class="msg">대기 중인 후보가 없습니다</div>';
+    for (const b of queueEl.querySelectorAll('[data-approve]')) {
+      b.onclick = () => approve(items.find((i) => i.id === b.dataset.approve));
+    }
+  } catch (err) {
+    console.error('후보 큐 불러오기 실패', err);
+    queueEl.innerHTML = '<div class="msg bad">후보를 불러오지 못했습니다</div>';
+  }
+}
+
+function queueCard(c) {
+  const guess = [c.guess?.date, c.guess?.start].filter(Boolean).join(' ') || '날짜 못 찾음';
+  return `<div class="queue-item">
+    <div>${escapeHtml(c.title)}</div>
+    <div class="meal-meta">${escapeHtml(c.source)} · ${escapeHtml(guess)}</div>
+    <div class="meal-links">
+      <button class="ghost" data-approve="${escapeHtml(c.id)}">폼에 채우기</button>
+    </div>
+  </div>`;
+}
+
+// 승인은 곧바로 공개하지 않고 폼에 채운다. 뽑아낸 값이 맞는지 내가 보고 고친다.
+function approve(c) {
+  if (!c) return;
+  const f = document.getElementById('meal-form');
+  // f.title 은 입력칸이 아니라 HTMLElement.title 문자열이다.
+  // 이름이 겹치는 칸이 있으므로 elements 를 거쳐야 한다.
+  f.elements.title.value = c.title;
+  f.elements.date.value = c.guess?.date || '';
+  f.elements.start.value = c.guess?.start || '';
+  f.elements.note.value = '';
+  f.dataset.id = c.id;
+  f.dataset.source = c.source;
+  f.dataset.sourceUrl = c.sourceUrl || '';
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+document.getElementById('meal-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const body = {
+    id: f.dataset.id || `manual:${Date.now()}`,
+    title: f.elements.title.value,
+    date: f.elements.date.value,
+    start: f.elements.start.value || null,
+    place: f.elements.place.value,
+    note: f.elements.note.value,
+    source: f.dataset.source || 'manual',
+    sourceUrl: f.dataset.sourceUrl || '',
+    signup: {
+      required: Boolean(f.elements.signupUrl.value),
+      url: f.elements.signupUrl.value,
+    },
+  };
+
+  adminMsg.textContent = '저장 중…';
+  adminMsg.className = 'msg';
+  try {
+    const res = await fetch('/api/meals', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...adminHeaders() },
+      body: JSON.stringify(body),
+    });
+    const info = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(info.error || `응답 ${res.status}`);
+    adminMsg.textContent = '저장했습니다';
+    adminMsg.className = 'msg good';
+    f.reset();
+    delete f.dataset.id;
+    delete f.dataset.source;
+    delete f.dataset.sourceUrl;
+    loadMeals();
+    loadQueue();
+  } catch (err) {
+    console.error('지꽁밥 저장 실패', err);
+    adminMsg.textContent = '실패: ' + err.message;
+    adminMsg.className = 'msg bad';
+  }
+};
 
 // -----------------------------------------------------------
 //  당겨서 새로고침
@@ -658,6 +882,13 @@ async function endPull(go) {
 start();
 loadMeta();
 loadList();
+
+// 탭 복원은 start/loadMeta/loadList 뒤에 둔다. showTab('meals') 는 아직
+// 없는 loadMeals 를 불러 예외를 던질 수 있는데, 앞의 세 호출이 먼저
+// 끝나 있어야 그 예외가 공지 화면 초기화까지 끌고 내려가지 않는다.
+let savedTab = 'notice';
+try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
+showTab(savedTab);
 </script>
 </body>
 </html>

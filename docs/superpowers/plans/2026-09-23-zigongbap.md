@@ -184,14 +184,16 @@ function nextDay(date) {
 
 function plusHour(hhmm) {
   const [hh, mm] = hhmm.split(':').map(Number);
-  return `${pad((hh + 1) % 24)}:${pad(mm)}`;
+  // 자정을 넘기면 같은 날짜에 붙는 DTEND 가 DTSTART 보다 앞서게 된다.
+  // 길이가 음수인 이벤트는 캘린더가 조용히 무시한다. 그날 끝으로 자른다.
+  return hh >= 23 ? '23:59' : `${pad(hh + 1)}:${pad(mm)}`;
 }
 
 // 역슬래시를 먼저 바꿔야 한다. 나중에 바꾸면 뒤에 넣은 역슬래시까지 또 바뀐다.
 const esc = (s) =>
   String(s)
     .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\;')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
 
@@ -409,7 +411,9 @@ export function pickTime(text) {
   const t = String(text ?? '');
 
   const hm = t.match(RE_HM);
-  if (hm) return `${pad(hm[1])}:${hm[2]}`;
+  // 범위를 넘으면 이 가지를 포기하고 한국어 표기로 넘어간다. 이 값은
+  // 승인 화면에 guess.start 로 그대로 보이므로 여기서 걸러야 한다.
+  if (hm && Number(hm[1]) <= 23 && Number(hm[2]) <= 59) return `${pad(hm[1])}:${hm[2]}`;
 
   const ko = t.match(RE_KO_TIME);
   if (!ko) return null;
@@ -522,8 +526,23 @@ Expected: FAIL — `normalize is not a function`
 //  KV 에 제각각인 모양이 들어가면 ICS 생성과 화면 양쪽이 터진다.
 // -----------------------------------------------------------
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
+
+// 링크는 스킴까지 봐야 한다. 화면 쪽 escapeHtml 은 & < > " ' 만 바꾸므로
+// javascript: 가 그대로 살아 href 에서 실행된다. 그 화면은 localStorage 에
+// 관리자 토큰을 들고 있어서, 링크 한 번 누르면 토큰이 샌다.
+const safeUrl = (v, max) => {
+  const s = str(v, max);
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? s : '';
+  } catch {
+    return ''; // 상대경로나 깨진 값
+  }
+};
 const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const RE_TIME = /^\d{2}:\d{2}$/;
+// 모양만 보면 안 된다. '2024:2025 학년도' 같은 글자에서 뽑힌 24:20 이 통과하면
+// DTEND 가 DTSTART 보다 앞선 이벤트가 되어 일부 캘린더가 통째로 거부한다.
+const RE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
 
 export function normalize(input, prev = null) {
@@ -541,14 +560,14 @@ export function normalize(input, prev = null) {
     host: str(take('host', ''), 80),
     signup: {
       required: Boolean(signup.required),
-      url: str(signup.url, 500),
+      url: safeUrl(signup.url, 500),
       deadline: str(signup.deadline, 10),
       capacity: Number.isFinite(Number(signup.capacity)) && signup.capacity !== null && signup.capacity !== ''
         ? Number(signup.capacity)
         : null,
     },
     source: str(take('source', 'manual'), 20),
-    sourceUrl: str(take('sourceUrl', ''), 500),
+    sourceUrl: safeUrl(take('sourceUrl', ''), 500),
     note: str(take('note', ''), 1000),
     status: take('status', 'confirmed') === 'cancelled' ? 'cancelled' : 'confirmed',
     // 캘린더는 SEQUENCE 가 올라가야 변경을 받아들인다. 안 올리면 무시한다.
@@ -880,9 +899,14 @@ async function queueFromNotices(items, board, env) {
 
 - [ ] **Step 2: 크론에 연결한다**
 
-`checkBoard` 안, `await mergeCategories(items, env);` 바로 다음 줄에 넣는다:
+`checkBoard` 의 **맨 끝**, `lastNo` 를 쓴 다음 줄에 넣는다. 알림 발송보다 앞에
+두면 안 된다 — 여기서 던지면 그 회차 푸시가 통째로 안 나가고, 워커 한 번의
+subrequest 한도도 발송 몫을 깎아먹는다. 공지 알림이 이 앱의 본래 목적이고
+식사 후보는 30분 더 기다려도 된다:
 
 ```js
+  // 알림 발송과 lastNo 기록이 끝난 뒤에 돈다. 앞에 두면 여기서 실패했을 때
+  // 그 회차 푸시가 통째로 안 나간다.
   await queueFromNotices(items, board, env);
 ```
 
@@ -976,7 +1000,18 @@ function showTab(name) {
 for (const b of document.querySelectorAll('.tab')) {
   b.onclick = () => showTab(b.dataset.tab);
 }
+```
 
+그리고 스크립트 **맨 끝**, 기존 `start(); loadMeta(); loadList();` **뒤에** 넣는다.
+앞에 두면 안 된다 — `showTab` 이 던지면 뒤따르는 세 줄이 통째로 안 돈다:
+
+```js
+start();
+loadMeta();
+loadList();
+
+// 보던 탭 복원은 맨 마지막이다. 앞에 두면 showTab 안에서 예외가 났을 때
+// 나머지 초기화가 통째로 멈춰 공지 화면까지 죽는다.
 let savedTab = 'notice';
 try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
 showTab(savedTab);
