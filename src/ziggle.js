@@ -70,8 +70,14 @@ async function mintToken(env) {
   return access_token;
 }
 
+// orderBy=recent 가 없으면 2023년 글부터 온다 — 기본 정렬이 최신순이 아니다.
+// 실제로 붙여보고 알았다. 30건이면 지글이 며칠치를 채울 만큼 올라와도 남는다.
+const NOTICE_QUERY = '?orderBy=recent&limit=30';
+
 const getNotices = (token) =>
-  fetch(`${ZIGGLE_API}/notice`, { headers: { authorization: `Bearer ${token}` } });
+  fetch(`${ZIGGLE_API}/notice${NOTICE_QUERY}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 
 export async function fetchZiggleNotices(env) {
   let token = await env.GIST.get('ziggleAccess');
@@ -85,8 +91,8 @@ export async function fetchZiggleNotices(env) {
   if (!res.ok) throw new Error(`지글 /notice ${res.status}`);
 
   const body = await res.json();
-  // ponytail: 첫 페이지만 읽는다. 30분 사이에 한 페이지를 넘길 만큼 글이
-  // 올라오면 놓친다. 실제로 놓치면 그때 커서를 돈다.
+  // ponytail: 최신 30건만 읽는다. 30분 사이에 30건이 올라오면 놓친다.
+  // 실제로 놓치면 그때 커서를 돈다.
   return Array.isArray(body?.list) ? body.list : [];
 }
 
