@@ -109,6 +109,15 @@
   .meal-links { display:flex; gap:12px; margin-top:8px; }
   .ghost-link { font-size:13px; color:var(--muted); text-decoration:underline; }
 
+  .admin-h { margin:18px 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
+  .meal-form { display:flex; flex-direction:column; gap:8px; }
+  .meal-form input {
+    padding:10px; font-size:14px; color:var(--ink);
+    background:none; border:1px solid var(--line); border-radius:8px;
+  }
+  .queue-item { padding:12px 0; border-bottom:1px solid var(--line); }
+  .queue-item .meal-links { margin-top:6px; }
+
   .tabs { display:flex; gap:4px; margin:0 0 18px; }
   .tab {
     flex:1; padding:10px; font-size:14px; font-weight:600;
@@ -246,6 +255,21 @@
   </section>
 
   <section id="tab-meals" hidden>
+    <div id="admin" hidden>
+      <h2 class="admin-h">승인 대기</h2>
+      <div id="queue"></div>
+      <h2 class="admin-h">직접 추가</h2>
+      <form id="meal-form" class="meal-form">
+        <input name="title" placeholder="제목" required>
+        <input name="date" placeholder="YYYY-MM-DD" required>
+        <input name="start" placeholder="HH:MM (없으면 비움)">
+        <input name="place" placeholder="장소">
+        <input name="signupUrl" placeholder="신청 링크">
+        <input name="note" placeholder="메모">
+        <button type="submit">추가</button>
+      </form>
+      <div class="msg" id="admin-msg"></div>
+    </div>
     <div id="meals"><div class="msg">불러오는 중…</div></div>
   </section>
 
@@ -319,7 +343,7 @@ function showTab(name) {
   document.getElementById('tab-notice').hidden = name !== 'notice';
   document.getElementById('tab-meals').hidden = name !== 'meals';
   try { localStorage.setItem('tab', name); } catch { /* 사파리 비공개 모드 */ }
-  if (name === 'meals') loadMeals();
+  if (name === 'meals') { loadMeals(); loadQueue(); }
 }
 
 for (const b of document.querySelectorAll('.tab')) {
@@ -691,6 +715,107 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// -----------------------------------------------------------
+//  관리자 — 승인 큐
+//
+//  adminToken 이 있어야 보인다. 탭 자체는 누구나 보지만, 무엇을 공개할지는
+//  내가 정한다. 남의 폰에 내 메일에서 나온 게 그냥 나가면 안 된다.
+// -----------------------------------------------------------
+const adminEl = document.getElementById('admin');
+const queueEl = document.getElementById('queue');
+const adminMsg = document.getElementById('admin-msg');
+
+const isAdmin = () => Boolean(localStorage.getItem('adminToken'));
+
+async function loadQueue() {
+  if (!isAdmin()) return;
+  adminEl.hidden = false;
+  try {
+    const res = await fetch('/api/meals/queue', { headers: adminHeaders() });
+    if (!res.ok) throw new Error('응답 ' + res.status);
+    const items = await res.json();
+    queueEl.innerHTML = items.length
+      ? items.map(queueCard).join('')
+      : '<div class="msg">대기 중인 후보가 없습니다</div>';
+    for (const b of queueEl.querySelectorAll('[data-approve]')) {
+      b.onclick = () => approve(items.find((i) => i.id === b.dataset.approve));
+    }
+  } catch (err) {
+    console.error('후보 큐 불러오기 실패', err);
+    queueEl.innerHTML = '<div class="msg bad">후보를 불러오지 못했습니다</div>';
+  }
+}
+
+function queueCard(c) {
+  const guess = [c.guess?.date, c.guess?.start].filter(Boolean).join(' ') || '날짜 못 찾음';
+  return `<div class="queue-item">
+    <div>${escapeHtml(c.title)}</div>
+    <div class="meal-meta">${escapeHtml(c.source)} · ${escapeHtml(guess)}</div>
+    <div class="meal-links">
+      <button class="ghost" data-approve="${escapeHtml(c.id)}">폼에 채우기</button>
+    </div>
+  </div>`;
+}
+
+// 승인은 곧바로 공개하지 않고 폼에 채운다. 뽑아낸 값이 맞는지 내가 보고 고친다.
+function approve(c) {
+  if (!c) return;
+  const f = document.getElementById('meal-form');
+  // f.title 은 입력칸이 아니라 HTMLElement.title 문자열이다.
+  // 이름이 겹치는 칸이 있으므로 elements 를 거쳐야 한다.
+  f.elements.title.value = c.title;
+  f.elements.date.value = c.guess?.date || '';
+  f.elements.start.value = c.guess?.start || '';
+  f.elements.note.value = '';
+  f.dataset.id = c.id;
+  f.dataset.source = c.source;
+  f.dataset.sourceUrl = c.sourceUrl || '';
+  f.scrollIntoView({ behavior: 'smooth' });
+}
+
+document.getElementById('meal-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const body = {
+    id: f.dataset.id || `manual:${Date.now()}`,
+    title: f.elements.title.value,
+    date: f.elements.date.value,
+    start: f.elements.start.value || null,
+    place: f.elements.place.value,
+    note: f.elements.note.value,
+    source: f.dataset.source || 'manual',
+    sourceUrl: f.dataset.sourceUrl || '',
+    signup: {
+      required: Boolean(f.elements.signupUrl.value),
+      url: f.elements.signupUrl.value,
+    },
+  };
+
+  adminMsg.textContent = '저장 중…';
+  adminMsg.className = 'msg';
+  try {
+    const res = await fetch('/api/meals', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...adminHeaders() },
+      body: JSON.stringify(body),
+    });
+    const info = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(info.error || `응답 ${res.status}`);
+    adminMsg.textContent = '저장했습니다';
+    adminMsg.className = 'msg good';
+    f.reset();
+    delete f.dataset.id;
+    delete f.dataset.source;
+    delete f.dataset.sourceUrl;
+    loadMeals();
+    loadQueue();
+  } catch (err) {
+    console.error('지꽁밥 저장 실패', err);
+    adminMsg.textContent = '실패: ' + err.message;
+    adminMsg.className = 'msg bad';
+  }
+};
 
 // -----------------------------------------------------------
 //  당겨서 새로고침
