@@ -102,6 +102,13 @@
   .msg.bad { color:var(--bad); }
   .msg.good { color:var(--ok); }
 
+  .meal { padding:14px 0; border-bottom:1px solid var(--line); }
+  .meal h3 { margin:0 0 6px; font-size:15px; font-weight:600; }
+  .meal-meta { font-size:13px; color:var(--muted); }
+  .meal-note { margin:8px 0 0; font-size:13px; color:var(--muted); }
+  .meal-links { display:flex; gap:12px; margin-top:8px; }
+  .ghost-link { font-size:13px; color:var(--muted); text-decoration:underline; }
+
   .tabs { display:flex; gap:4px; margin:0 0 18px; }
   .tab {
     flex:1; padding:10px; font-size:14px; font-weight:600;
@@ -625,6 +632,58 @@ async function loadList() {
       <button class="ghost" id="retry">다시 시도</button></div>`;
     document.getElementById('retry').onclick = loadList;
   }
+}
+
+// -----------------------------------------------------------
+//  지꽁밥
+//
+//  지난 행사는 숨긴다. 오늘 것은 남긴다 — 점심이 아직 안 지났을 수 있다.
+// -----------------------------------------------------------
+const mealsEl = document.getElementById('meals');
+
+async function loadMeals() {
+  try {
+    const res = await fetch('/api/meals');
+    if (!res.ok) throw new Error('응답 ' + res.status);
+    const all = await res.json();
+
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    const upcoming = all.filter((m) => m.date >= today);
+
+    const feed = `${location.origin}/api/meals.ics`;
+    const head = `<a class="ghost-link" href="webcal://${location.host}/api/meals.ics">캘린더에 추가</a>
+      <div class="msg">안 되면 이 주소를 캘린더 앱에 붙여넣으세요<br>${escapeHtml(feed)}</div>`;
+
+    if (upcoming.length === 0) {
+      mealsEl.innerHTML = `${head}<div class="msg">예정된 행사가 없습니다</div>`;
+      return;
+    }
+
+    mealsEl.innerHTML = head + upcoming.map(mealCard).join('');
+  } catch (err) {
+    console.error('지꽁밥 불러오기 실패', err);
+    const why = navigator.onLine ? err.message : '오프라인';
+    mealsEl.innerHTML = `<div class="msg bad">불러오지 못했습니다 (${escapeHtml(why)})<br>
+      <button class="ghost" id="meals-retry">다시 시도</button></div>`;
+    document.getElementById('meals-retry').onclick = loadMeals;
+  }
+}
+
+function mealCard(m) {
+  const when = m.start ? `${m.date} ${m.start}` : m.date;
+  const where = m.place ? ` · ${escapeHtml(m.place)}` : '';
+  const signup = m.signup?.url
+    ? `<a class="ghost-link" href="${escapeHtml(m.signup.url)}" target="_blank" rel="noopener">신청하기</a>`
+    : '';
+  const src = m.sourceUrl
+    ? `<a class="ghost-link" href="${escapeHtml(m.sourceUrl)}" target="_blank" rel="noopener">원문</a>`
+    : '';
+  return `<article class="meal">
+    <h3>${escapeHtml(m.title)}</h3>
+    <div class="meal-meta">${escapeHtml(when)}${where}</div>
+    ${m.note ? `<p class="meal-note">${escapeHtml(m.note)}</p>` : ''}
+    <div class="meal-links">${signup}${src}</div>
+  </article>`;
 }
 
 // 공지 제목은 남이 쓴 글이다. 그대로 innerHTML 에 넣으면 안 된다.
