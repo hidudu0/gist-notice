@@ -61,7 +61,52 @@ Gmail → Apps Script      ┘   mealq:<id>    meal:<id>    /api/meals.ics
 
 경로는 셋이었다. (a) GISTORY 팀에 API 키나 RSS 개방 요청, (b) 내 계정으로 로그인해
 refresh token 을 확보하고 크론이 갱신, (c) 링크만 걸고 긁지 않음. **(b) 로 간다.**
-토큰이 끊기면 그 소스만 빠지고 나머지는 계속 돈다.
+
+### 지글 인증 사슬 (2026-09-23 실측 확인)
+
+실제로 끝까지 통과시켜 확인했다. 토큰이 두 겹이고, IdP 토큰으로는 `/notice` 가 열리지
+않는다는 것이 핵심이다.
+
+```
+KV ziggleRefresh (IdP refresh token, 90일)
+  → POST https://api.account.gistory.me/oauth/token
+        grant_type=refresh_token, client_id=b0c3a25f-1291-410c-bac3-192094d47c77,
+        redirect_uri=https://ziggle.gistory.me/auth/callback
+    → 200 { access_token, refresh_token, expires_in: 10800, refresh_token_expires_in: 7776000 }
+  → POST https://api.ziggle.gistory.me/auth/login
+        Authorization: Bearer <IdP access_token>   ← 헤더다. 본문에 실으면 401
+    → 201 { access_token }                          ← 지글 토큰, 253자
+  → GET https://api.ziggle.gistory.me/notice
+        Authorization: Bearer <지글 access_token>
+    → 200 { total, list }
+```
+
+측정값과 제약:
+
+- **client secret 이 필요 없다.** SPA 가 `react-oauth2-code-pkce` 를 쓰는 공개 클라이언트다.
+  OIDC 메타데이터는 `client_secret_basic/post` 만 광고하지만 실제로는 client_id 만으로 통과한다
+- IdP access token 3시간, refresh token 90일 (`7776000`초)
+- IdP access token 으로 `/notice` 를 부르면 401 이다. 쿠키만으로도 401 이다.
+  지글 토큰만 열린다
+- 항목 필드: `id, title, group, author, createdAt, views, langs, content, reactions,
+  category, deadline, currentDeadline, publishedAt, imageUrls, documents, crawledUrl, tags`.
+  **본문(`content`)과 마감(`deadline`)이 함께 온다** — 제목만 있는 학사공지보다 날짜·마감
+  추출이 훨씬 유리하다
+- scope: `offline_access name email`
+
+**refresh token 이 회전한다.** 한 번 쓰면 새것으로 바뀌고 이전 것은 죽는다. 그래서:
+
+- 토큰은 `wrangler secret` 이 아니라 **KV `ziggleRefresh`** 에 둔다. 런타임에 새 값을 써야 한다
+- 브라우저와 크론이 같은 토큰을 공유할 수 없다. 크론이 갱신하면 지글 웹 세션이 끊기고,
+  지글 웹을 쓰면 크론이 끊긴다. 이것이 (b) 를 "지속 가능하지 않다"고 적었던 이유이고,
+  실측으로 확인됐다
+- 갱신 횟수를 줄인다: 지글 access token 을 만료까지 KV 에 캐시해, 크론 대부분의 회차는
+  캐시된 토큰만 쓴다. IdP 갱신은 3시간에 한 번, 하루 8회
+- 끊기면 조용히 죽지 않게 한다: refresh 가 401 이면 기존 장애 감시 경로로 관리자 기기에
+  알림을 보낸다. 복구는 지글에 다시 로그인해 토큰을 다시 넣는 것이다
+
+이 제약이 싫어지면 (a) 로 돌린다. GISTORY 팀이 `/notice/rss` 를 이미 만들어뒀다(401 로 잠겨
+있을 뿐이다) 는 것이 요청의 명분이 된다.
 
 ### Outlook — Microsoft Graph 는 막혔다
 
