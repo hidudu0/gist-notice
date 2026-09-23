@@ -191,6 +191,22 @@ const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const RE_TIME = /^\d{2}:\d{2}$/;
 const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
 
+// signup.url 과 sourceUrl 은 화면에서 href 에 그대로 꽂힌다. escapeHtml 은
+// <, >, " 같은 글자만 막을 뿐 javascript: 같은 스킴은 그대로 통과시킨다.
+// 이 페이지는 관리자 토큰을 localStorage 에 두고 있어서, javascript: 링크를
+// 관리자가 한 번 누르면 토큰이 그대로 새어나간다 — 장식이 아니라 저장
+// 단계에서 막아야 할 보안 문제다. http/https 로 파싱되는 것만 통과시킨다.
+const safeUrl = (v, max) => {
+  const s = str(v, max);
+  if (!s) return '';
+  try {
+    const { protocol } = new URL(s);
+    return protocol === 'http:' || protocol === 'https:' ? s : '';
+  } catch {
+    return ''; // 상대경로거나 아예 URL 모양이 아니면 new URL 이 던진다
+  }
+};
+
 export function normalize(input, prev = null) {
   const old = prev ?? {};
   const take = (key, fallback) => (input[key] !== undefined ? input[key] : old[key] ?? fallback);
@@ -206,14 +222,14 @@ export function normalize(input, prev = null) {
     host: str(take('host', ''), 80),
     signup: {
       required: Boolean(signup.required),
-      url: str(signup.url, 500),
+      url: safeUrl(signup.url, 500),
       deadline: str(signup.deadline, 10),
       capacity: Number.isFinite(Number(signup.capacity)) && signup.capacity !== null && signup.capacity !== ''
         ? Number(signup.capacity)
         : null,
     },
     source: str(take('source', 'manual'), 20),
-    sourceUrl: str(take('sourceUrl', ''), 500),
+    sourceUrl: safeUrl(take('sourceUrl', ''), 500),
     note: str(take('note', ''), 1000),
     status: take('status', 'confirmed') === 'cancelled' ? 'cancelled' : 'confirmed',
     // 캘린더는 SEQUENCE 가 올라가야 변경을 받아들인다. 안 올리면 무시한다.
