@@ -12,7 +12,7 @@
 import { parse } from './parse.js';
 import { diff } from './diff.js';
 import { sendPush } from './push.js';
-import { toIcs } from './meals.js';
+import { toIcs, normalize, mealError, pickDate, pickTime } from './meals.js';
 
 // 게시판 주소는 wrangler.jsonc 의 vars.BOARD_URL 한 곳에만 있다.
 const detailUrl = (board, no) => `${board}?mode=V&no=${no}`;
@@ -94,6 +94,34 @@ async function dropIfGone(res, key, env) {
   if (res.status !== 404 && res.status !== 410) return false;
   await env.GIST.delete(key);
   return true;
+}
+
+// 지꽁밥 후보는 30일이면 지워진다. 승인 안 한 건 어차피 지난 행사다.
+const QUEUE_TTL = 30 * 24 * 60 * 60;
+
+// 취소한 이벤트를 달력에 얼마나 더 실어 보낼지. 이 기간이 지나면 지운다.
+const CANCEL_KEEP_DAYS = 30;
+
+// meal: 키들을 모아 읽기 캐시를 다시 쓴다.
+// 목록 조회 때마다 list() 를 돌리면 KV 무료 한도를 태운다 — latest 와 같은 이유다.
+async function refreshMeals(env) {
+  const { keys } = await env.GIST.list({ prefix: 'meal:' });
+  const cutoff = Date.now() - CANCEL_KEEP_DAYS * 86400000;
+
+  const meals = [];
+  for (const k of keys) {
+    const m = await env.GIST.get(k.name, 'json');
+    if (!m) continue;
+    if (m.status === 'cancelled' && Date.parse(m.updatedAt) < cutoff) {
+      await env.GIST.delete(k.name);
+      continue;
+    }
+    meals.push(m);
+  }
+
+  meals.sort((a, b) => a.date.localeCompare(b.date));
+  await env.GIST.put('meals', JSON.stringify(meals));
+  return meals;
 }
 
 // ===========================================================
@@ -385,6 +413,78 @@ export default {
     if (pathname === '/api/run' && req.method === 'POST') {
       if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
       return json(await checkBoard(env));
+    }
+
+    // 승인 대기 후보. 관리자 화면이 읽는다.
+    if (pathname === '/api/meals/queue' && req.method === 'GET') {
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
+      const { keys } = await env.GIST.list({ prefix: 'mealq:' });
+      const out = [];
+      for (const k of keys) {
+        const c = await env.GIST.get(k.name, 'json');
+        if (c) out.push(c);
+      }
+      out.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
+      return json(out);
+    }
+
+    // 후보 적재. 크론과 Apps Script 가 같은 문으로 들어온다.
+    if (pathname === '/api/meals/queue' && req.method === 'POST') {
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
+      const body = await req.json().catch(() => null);
+      if (!body?.id || !body?.title) return json({ error: 'id 와 title 이 필요합니다' }, 400);
+
+      const text = String(body.text ?? body.title).slice(0, 4000);
+      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+
+      const candidate = {
+        id: String(body.id).slice(0, 120),
+        title: String(body.title).slice(0, 200),
+        text,
+        source: String(body.source ?? 'manual').slice(0, 20),
+        sourceUrl: String(body.sourceUrl ?? '').slice(0, 500),
+        receivedAt: new Date().toISOString(),
+        // 뽑을 수 있는 만큼만 미리 뽑아둔다. 나머지는 승인 화면에서 채운다.
+        guess: { date: pickDate(text, today), start: pickTime(text) },
+      };
+
+      await env.GIST.put(`mealq:${candidate.id}`, JSON.stringify(candidate), {
+        expirationTtl: QUEUE_TTL,
+      });
+      return json({ ok: true, id: candidate.id });
+    }
+
+    // 승인 = 확정에 넣기. 직접 추가도 같은 문으로 들어온다 — 하는 일이 같다.
+    if (pathname === '/api/meals' && req.method === 'POST') {
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: '본문이 JSON 이 아닙니다' }, 400);
+
+      const prev = body.id ? await env.GIST.get(`meal:${body.id}`, 'json') : null;
+      const meal = normalize(body, prev);
+
+      const problem = mealError(meal);
+      if (problem) return json({ error: problem }, 400);
+
+      await env.GIST.put(`meal:${meal.id}`, JSON.stringify(meal));
+      await env.GIST.delete(`mealq:${meal.id}`); // 승인했으면 큐에서 뺀다
+      await refreshMeals(env);
+      return json({ ok: true, meal });
+    }
+
+    // 삭제는 진짜로 지우지 않는다. 취소 표시로 바꿔야 구독자 달력에서 사라진다.
+    if (pathname.startsWith('/api/meals/') && req.method === 'DELETE') {
+      if (!authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
+      const id = decodeURIComponent(pathname.slice('/api/meals/'.length));
+      const prev = await env.GIST.get(`meal:${id}`, 'json');
+      if (!prev) return json({ error: '없는 이벤트입니다' }, 404);
+
+      await env.GIST.put(`meal:${id}`, JSON.stringify(normalize({ status: 'cancelled' }, prev)));
+      await refreshMeals(env);
+      return json({ ok: true });
     }
 
     // 공지와 무관하게 내가 직접 구독자 전원에게 메시지를 보낸다.
