@@ -168,7 +168,14 @@ export function pickTime(text) {
   const t = String(text ?? '');
 
   const hm = t.match(RE_HM);
-  if (hm) return `${pad(hm[1])}:${hm[2]}`;
+  if (hm) {
+    // "2024:2025 학년도" 같은 글도 이 정규식에 걸린다. 범위를 안 보면
+    // "24:20" 이 관리자 승인 화면에 guess.start 로 그대로 뜬다 —
+    // normalize 의 time() 이 나중에 걸러도, 사람이 먼저 보는 값이 틀렸다.
+    const hh = Number(hm[1]);
+    const mm = Number(hm[2]);
+    if (hh <= 23 && mm <= 59) return `${pad(hh)}:${pad(mm)}`;
+  }
 
   const ko = t.match(RE_KO_TIME);
   if (!ko) return null;
@@ -188,7 +195,10 @@ export function pickTime(text) {
 // -----------------------------------------------------------
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const RE_TIME = /^\d{2}:\d{2}$/;
+// 00~23시, 00~59분만 통과시킨다. 모양만 맞고 범위를 벗어난 값(예: "24:20")은
+// 저장되는 모든 식사가 지나가는 이 지점에서 걸러야 한다 — pickTime, 관리자
+// 입력폼, 앞으로 생길 다른 출처까지 한 곳에서 막힌다.
+const RE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const time = (v) => (RE_TIME.test(String(v ?? '')) ? String(v) : null);
 
 // signup.url 과 sourceUrl 은 화면에서 href 에 그대로 꽂힌다. escapeHtml 은

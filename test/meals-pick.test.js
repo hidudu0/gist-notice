@@ -57,3 +57,13 @@ test('시각이 없으면 null', () => {
   assert.equal(pickTime('무료 점심'), null);
   assert.equal(pickTime(''), null);
 });
+
+test('범위를 벗어난 시각은 null — "학년도" 표기를 시각으로 오인하지 않는다', () => {
+  assert.equal(pickTime('2024:2025 학년도 무료 도시락'), null);
+  assert.equal(pickTime('25:00 부터'), null);
+  assert.equal(pickTime('12:60 부터'), null);
+});
+
+test('23:59 는 정상 시각이다', () => {
+  assert.equal(pickTime('23:59 마감'), '23:59');
+});

@@ -196,13 +196,19 @@ async function checkBoard(env) {
 
   // 검색 칩에 쓸 카테고리 목록. 지금까지 본 것들의 합집합.
   await mergeCategories(items, env);
-  await queueFromNotices(items, board, env);
   await refreshCount(env);
 
   let sent = 0;
   if (fresh.length > 0) sent = await notifyAll(fresh, board, env);
 
   if (maxNo !== lastNo) await env.GIST.put('lastNo', String(maxNo));
+
+  // 지꽁밥 큐 적재는 푸시 발송과 lastNo 갱신이 끝난 다음, 맨 마지막에 한다.
+  // 앱의 본질은 알림 발송이고 식사 큐는 30분 늦어도 된다 — 여기서 KV 오류나
+  // subrequest 한도 초과로 던져도 위의 발송과 lastNo 갱신은 이미 끝나 있다.
+  // 순서를 바꾸는 김에 이 작업이 쓰는 KV 요청도 발송이 쓰는 subrequest
+  // 예산 밖으로 빠진다.
+  await queueFromNotices(items, board, env);
 
   console.log(`확인 완료: 파싱 ${items.length}건, 새 글 ${fresh.length}건, 발송 ${sent}건`);
   return { fresh: fresh.length, sent };
@@ -291,9 +297,12 @@ function notifyAll(fresh, board, env) {
 async function sendToAll(data, env) {
   const list = await env.GIST.list({ prefix: 'sub:' });
 
-  // ponytail: Workers 무료 플랜은 호출 1회당 바깥으로 나가는 fetch 가 50개까지다.
-  // 게시판 fetch 1개를 빼면 구독자 49명이 상한. 그 이상이면 유료 플랜(1000개)
-  // 으로 올리거나 여러 번에 나눠 보내야 한다.
+  // ponytail: Workers 무료 플랜의 호출당 50개 한도는 fetch 뿐 아니라 KV 호출도
+  // 센다. 크론 한 번이 여기 도달하기 전에 이미 게시판 fetch, lastNo, failStreak,
+  // 아카이브·카테고리 병합, refreshCount, 이 함수의 list 로 9개를 쓰고, 구독자
+  // 한 명당 KV get + push fetch 로 2개씩 더 쓴다. 그래서 실제 상한은 구독자
+  // 20명 근처다. 그 이상이면 유료 플랜(1000개)으로 올리거나 여러 번에 나눠
+  // 보내야 한다.
   const results = await Promise.allSettled(
     list.keys.map(async ({ name }) => {
       const sub = await env.GIST.get(name, 'json');

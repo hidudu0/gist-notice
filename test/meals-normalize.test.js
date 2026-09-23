@@ -31,6 +31,16 @@ test('너무 긴 값은 자른다', () => {
   assert.equal(m.title.length, 200);
 });
 
+test('범위를 벗어난 시각은 버리고 종일 이벤트로 만든다', () => {
+  assert.equal(normalize({ id: 'a', title: 'A', date: '2026-09-25', start: '24:20' }, null).start, null);
+  assert.equal(normalize({ id: 'a', title: 'A', date: '2026-09-25', start: '25:00' }, null).start, null);
+  assert.equal(normalize({ id: 'a', title: 'A', date: '2026-09-25', start: '12:60' }, null).start, null);
+});
+
+test('23:59 는 그대로 저장된다', () => {
+  assert.equal(normalize({ id: 'a', title: 'A', date: '2026-09-25', start: '23:59' }, null).start, '23:59');
+});
+
 test('제목이 없으면 문제를 알려준다', () => {
   assert.match(mealError(normalize({ id: 'a', date: '2026-09-25' }, null)), /제목/);
 });
