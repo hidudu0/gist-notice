@@ -319,10 +319,6 @@ for (const b of document.querySelectorAll('.tab')) {
   b.onclick = () => showTab(b.dataset.tab);
 }
 
-let savedTab = 'notice';
-try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
-showTab(savedTab);
-
 // fix 를 주면 문구 아래에 버튼이 하나 붙는다. 실패를 보여주기만 하고
 // 사용자가 할 수 있는 일이 없으면 앱을 지웠다 깔게 되므로, 한 번에
 // 고칠 수 있는 실패는 그 자리에서 고치게 한다.
@@ -702,6 +698,13 @@ async function endPull(go) {
 start();
 loadMeta();
 loadList();
+
+// 탭 복원은 start/loadMeta/loadList 뒤에 둔다. showTab('meals') 는 아직
+// 없는 loadMeals 를 불러 예외를 던질 수 있는데, 앞의 세 호출이 먼저
+// 끝나 있어야 그 예외가 공지 화면 초기화까지 끌고 내려가지 않는다.
+let savedTab = 'notice';
+try { savedTab = localStorage.getItem('tab') || 'notice'; } catch { /* 무시 */ }
+showTab(savedTab);
 </script>
 </body>
 </html>
